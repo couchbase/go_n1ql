@@ -11,57 +11,73 @@ package n1ql
 
 import (
 	"database/sql/driver"
-	"fmt"
+	"encoding/json"
 	"io"
+	"net/http"
 )
 
 type n1qlRows struct {
-	rc         int
-	resultRows []interface{}
-	cursor     int
+	resp       *http.Response
+	results    io.Reader
+	resultChan chan interface{}
+	errChan    chan error
+	closed     bool
 }
 
-func resultToRows(result interface{}) (*n1qlRows, error) {
+func resultToRows(results io.Reader, resp *http.Response) (*n1qlRows, error) {
 
-	switch result := result.(type) {
-	case map[string]interface{}:
-		nr := &n1qlRows{}
-		if result["results"] != nil {
-			switch resultRows := result["results"].(type) {
-			case []interface{}:
-				nr.resultRows = resultRows
-				nr.rc = len(resultRows)
-				return nr, nil
-			default:
-				fmt.Printf("This is the type %T", result["results"])
+	rows := &n1qlRows{results: results,
+		resp:       resp,
+		resultChan: make(chan interface{}, 1),
+		errChan:    make(chan error),
+	}
+	go rows.populateRows()
 
-			}
-		}
-	default:
-		return nil, fmt.Errorf("N1QL: Failed to decode result")
+	return rows, nil
+}
+
+func (rows *n1qlRows) populateRows() {
+	var resultRows []interface{}
+	defer rows.resp.Body.Close()
+
+	resultsDecoder := json.NewDecoder(rows.results)
+	err := resultsDecoder.Decode(&resultRows)
+
+	if err != nil {
+		rows.errChan <- err
 	}
 
-	return nil, fmt.Errorf("N1QL: Failed to decode result")
+	for _, row := range resultRows {
+		if rows.closed == true {
+			break
+		}
+		rows.resultChan <- row
+	}
+
+	close(rows.resultChan)
+
 }
 
 func (rows *n1qlRows) Columns() []string {
-	if rows.rc != 0 {
-		return []string{"results"}
-	}
-	return nil
+	return []string{"results"}
 }
 
 func (rows *n1qlRows) Close() error {
+	rows.closed = true
 	return nil
 }
 
 func (rows *n1qlRows) Next(dest []driver.Value) error {
-	if rows.cursor == rows.rc {
-		return io.EOF
+	select {
+	case r, ok := <-rows.resultChan:
+		if ok {
+			dest[0] = r
+			return nil
+		} else {
+			return io.EOF
+		}
+	case e := <-rows.errChan:
+		return e
 	}
 
-	nextResult := rows.resultRows[rows.cursor]
-	dest[0] = nextResult
-	rows.cursor++
-	return nil
 }

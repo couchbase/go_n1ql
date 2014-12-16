@@ -11,6 +11,7 @@ package n1ql
 
 import (
 	"database/sql/driver"
+	"fmt"
 	"io"
 	"testing"
 )
@@ -21,7 +22,7 @@ func TestConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, err := conn.(*n1qlConn).Query("select * from `beer-sample` limit 5", nil)
+	results, err := conn.(*n1qlConn).Query("select * from `beer-sample`", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +33,23 @@ func TestConnection(t *testing.T) {
 		totalRows++
 	}
 
-	if totalRows != 5 {
-		t.Fatal(" Got the wrong number of rows %d", totalRows)
+	if totalRows != 7303 {
+		t.Fatal(" Got the wrong number of rows ", totalRows)
 	}
+
+	results, err = conn.(*n1qlConn).Query("select * from `gamesim-sample`", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	totalRows = 0
+	for results.Next(result) != io.EOF {
+		totalRows++
+		if totalRows == 100 {
+			results.Close()
+		}
+	}
+
+	fmt.Printf(" Got %d rows from gamesim-sample", totalRows)
+
 }

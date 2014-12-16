@@ -143,19 +143,20 @@ func (conn *n1qlConn) Query(query string, args []driver.Value) (driver.Rows, err
 		return nil, fmt.Errorf("N1QL: Failed to execute query %s", bod)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	var resultMap map[string]*json.RawMessage
+	decoder := json.NewDecoder(resp.Body)
+
+	err = decoder.Decode(&resultMap)
 	if err != nil {
-		return nil, fmt.Errorf("N1QL: Failed to retrieve results. Error %v", err)
+		fmt.Printf(" Failed to decode %v", err)
 	}
 
-	defer resp.Body.Close()
+	for name, results := range resultMap {
+		if name == "results" {
 
-	var results map[string]interface{}
-
-	if err := json.Unmarshal(body, &results); err != nil {
-		return nil, fmt.Errorf("N1QL: Failed to unmarshall results %v", err)
+			return resultToRows(bytes.NewReader(*results), resp)
+		}
 	}
 
-	return resultToRows(results)
-
+	return nil, err
 }
