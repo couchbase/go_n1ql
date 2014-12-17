@@ -79,5 +79,4 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 	case e := <-rows.errChan:
 		return e
 	}
-
 }

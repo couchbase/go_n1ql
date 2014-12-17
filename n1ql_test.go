@@ -49,7 +49,22 @@ func TestConnection(t *testing.T) {
 			results.Close()
 		}
 	}
-
 	fmt.Printf(" Got %d rows from gamesim-sample", totalRows)
+
+	stmt, err := conn.Prepare("select * from `beer-sample` where `beer-sample`.type = \"beer\" limit 10")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	results, err = stmt.Query(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	totalRows = 0
+	for results.Next(result) != io.EOF {
+		totalRows++
+	}
+	fmt.Printf(" Got %d rows from the last query", totalRows)
 
 }
