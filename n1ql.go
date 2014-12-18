@@ -7,7 +7,7 @@
 //  either express or implied. See the License for the specific language governing permissions
 //  and limitations under the License.
 
-package n1ql
+package go_n1ql
 
 import (
 	"bytes"
@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	buffered "github.com/couchbaselabs/query/server/http"
@@ -152,7 +153,18 @@ func (conn *n1qlConn) Close() error {
 	return nil
 }
 
+// Executes a query that returns a set of Rows.
+// Select statements should use this interface
 func (conn *n1qlConn) Query(query string, args []driver.Value) (driver.Rows, error) {
+
+	if len(args) > 0 {
+		var argCount int
+		query, argCount = prepareQuery(query)
+		if argCount != len(args) {
+			return nil, fmt.Errorf("Argument count mismatch %d != %d", argCount, len(args))
+		}
+		query = preparePositionalArgs(query, args)
+	}
 
 	request, err := prepareRequest(query, conn.queryAPI, args, false)
 	if err != nil {
@@ -185,6 +197,85 @@ func (conn *n1qlConn) Query(query string, args []driver.Value) (driver.Rows, err
 	}
 
 	return nil, err
+}
+
+// Execer implementation. To be used for queries that do not return any rows
+// such as Create Index, Insert, Upset, Delete etc
+func (conn *n1qlConn) Exec(query string, args []driver.Value) (driver.Result, error) {
+
+	if len(args) > 0 {
+		var argCount int
+		query, argCount = prepareQuery(query)
+		if argCount != len(args) {
+			return nil, fmt.Errorf("Argument count mismatch %d != %d", argCount, len(args))
+		}
+		query = preparePositionalArgs(query, args)
+	}
+
+	request, err := prepareRequest(query, conn.queryAPI, args, false)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := conn.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("N1QL: Failed to execute query %s Error  %v", query, err)
+	}
+
+	if resp.StatusCode != 200 {
+		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("N1QL: Failed to execute query %s", bod)
+	}
+
+	var resultMap map[string]*json.RawMessage
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("N1QL: Failed to read response body from server. Error %v", err)
+	}
+
+	if err := json.Unmarshal(body, &resultMap); err != nil {
+		return nil, fmt.Errorf("N1QL: Failed to parse response. Error %v", err)
+	}
+
+	var res *n1qlResult
+	for name, results := range resultMap {
+		switch name {
+		case "metrics":
+			var metrics map[string]interface{}
+			err := json.Unmarshal(*results, &metrics)
+			if err != nil {
+				return nil, fmt.Errorf("N1QL: Failed to unmarshal response. Error %v", err)
+			}
+			res = &n1qlResult{affectedRows: int64(metrics["mutationCount"].(float64))}
+			break
+		}
+	}
+
+	return res, nil
+}
+
+func prepareQuery(query string) (string, int) {
+
+	var count int
+	query = strings.Replace(query, "?", "@", -1)
+	re := regexp.MustCompile("@")
+
+	f := func(s string) string {
+		count++
+		return fmt.Sprintf("$%d", count)
+	}
+	return re.ReplaceAllStringFunc(query, f), count
+}
+
+func preparePositionalArgs(query string, args []driver.Value) string {
+	subList := make([]string, 0)
+
+	for i, arg := range args {
+		sub := []string{fmt.Sprintf("$%d", i+1), fmt.Sprintf("%v", arg)}
+		subList = append(subList, sub...)
+	}
+	r := strings.NewReplacer(subList...)
+	return r.Replace(query)
 }
 
 // prepare a http request for the query
@@ -222,7 +313,6 @@ func prepareRequest(query string, queryAPI string, args []driver.Value, prepare 
 
 type n1qlStmt struct {
 	conn      *n1qlConn
-	rows      *n1qlRows
 	prepared  string
 	signature string
 }
@@ -248,5 +338,13 @@ func (stmt *n1qlStmt) Query(args []driver.Value) (driver.Rows, error) {
 }
 
 func (stmt *n1qlStmt) Exec(args []driver.Value) (driver.Result, error) {
-	return nil, ErrNotImplemented
+	if stmt.prepared == "" {
+		return nil, fmt.Errorf("N1QL: Prepared statement not found")
+	}
+	pArgs := make([]driver.Value, 1)
+	prepared := "prepared:" + stmt.prepared
+	pArgs[0] = prepared
+	args = append(pArgs, args...)
+
+	return stmt.conn.Exec("", args)
 }

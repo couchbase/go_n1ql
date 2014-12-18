@@ -7,7 +7,7 @@
 //  either express or implied. See the License for the specific language governing permissions
 //  and limitations under the License.
 
-package n1ql
+package go_n1ql
 
 import (
 	"database/sql/driver"
@@ -71,7 +71,11 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 	select {
 	case r, ok := <-rows.resultChan:
 		if ok {
-			dest[0] = r
+			if len(rows.Columns()) == 1 {
+				bytes, _ := json.Marshal(r)
+				dest[0] = bytes
+			}
+			// else look at the signature
 			return nil
 		} else {
 			return io.EOF

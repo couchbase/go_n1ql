@@ -7,7 +7,7 @@
 //  either express or implied. See the License for the specific language governing permissions
 //  and limitations under the License.
 
-package n1ql
+package go_n1ql
 
 import (
 	"database/sql/driver"
@@ -66,5 +66,13 @@ func TestConnection(t *testing.T) {
 		totalRows++
 	}
 	fmt.Printf(" Got %d rows from the last query", totalRows)
+
+	res, err := conn.(*n1qlConn).Exec("upsert into default key \"irish2\" values {\"name\":\"irish\", \"type\":\"contact\"}\"", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ra, _ := res.RowsAffected()
+	fmt.Printf(" Number of rows inserted %d", ra)
 
 }
