@@ -191,15 +191,24 @@ func (conn *n1qlConn) performQuery(request *http.Request) (driver.Rows, error) {
 	}
 
 	var signature []string
+	var resultRows *json.RawMessage
+	var haveEnough = 0
+
 	for name, results := range resultMap {
 		switch name {
 		case "signature":
 			signature = decodeSignature(results)
+			haveEnough++
 		case "results":
-			return resultToRows(bytes.NewReader(*results), resp, signature)
+			resultRows = results
+			haveEnough++
+		}
+		if haveEnough == 2 {
+			break
 		}
 	}
-	return nil, err
+
+	return resultToRows(bytes.NewReader(*resultRows), resp, signature)
 
 }
 
@@ -308,6 +317,8 @@ func preparePositionalArgs(query string, argCount int, args []driver.Value) (str
 			switch arg := arg.(type) {
 			case string:
 				a = fmt.Sprintf("\"%v\"", arg)
+			case []byte:
+				a = string(arg)
 			default:
 				a = fmt.Sprintf("%v", arg)
 			}
@@ -329,24 +340,9 @@ func prepareRequest(query string, queryAPI string, args []driver.Value) (*http.R
 	postData.Set("statement", query)
 
 	if len(args) > 0 {
-		positionalArgs := make([]string, 0)
-		for _, arg := range args {
-			switch arg := arg.(type) {
-			case string:
-				params := strings.SplitN(arg, ":", 2)
-				if params[0] != "" && len(params) == 2 {
-					postData.Set(params[0], params[1])
-					continue
-				}
-				// add double quotes since this is a string
-				arg = "\"" + arg + "\""
-			}
-			// Append to positional args
-			positionalArgs = append(positionalArgs, fmt.Sprintf("%v", arg))
-		}
-		if len(positionalArgs) > 0 {
-			paStr, _ := json.Marshal(positionalArgs)
-			postData.Set("args", string(paStr))
+		paStr := buildPositionalArgList(args)
+		if len(paStr) > 0 {
+			postData.Set("args", paStr)
 		}
 	}
 
@@ -364,11 +360,43 @@ type n1qlStmt struct {
 }
 
 func (stmt *n1qlStmt) Close() error {
+	stmt.prepared = ""
+	stmt.signature = ""
+	stmt.argCount = 0
+	stmt = nil
 	return nil
 }
 
 func (stmt *n1qlStmt) NumInput() int {
 	return stmt.argCount
+}
+
+func buildPositionalArgList(args []driver.Value) string {
+	positionalArgs := make([]string, 0)
+	for _, arg := range args {
+		switch arg := arg.(type) {
+		case string:
+			// add double quotes since this is a string
+			positionalArgs = append(positionalArgs, fmt.Sprintf("\"%v\"", arg))
+		case []byte:
+			positionalArgs = append(positionalArgs, string(arg))
+		default:
+			positionalArgs = append(positionalArgs, fmt.Sprintf("%v", arg))
+		}
+	}
+
+	if len(positionalArgs) > 0 {
+		paStr := "["
+		for i, param := range positionalArgs {
+			if i == len(positionalArgs)-1 {
+				paStr = fmt.Sprintf("%s%s]", paStr, param)
+			} else {
+				paStr = fmt.Sprintf("%s%s,", paStr, param)
+			}
+		}
+		return paStr
+	}
+	return ""
 }
 
 // prepare a http request for the query
@@ -383,24 +411,9 @@ func (stmt *n1qlStmt) prepareRequest(args []driver.Value) (*http.Request, error)
 	}
 
 	if len(args) > 0 {
-		positionalArgs := make([]string, 0)
-		for _, arg := range args {
-			switch arg := arg.(type) {
-			case string:
-				params := strings.SplitN(arg, ":", 2)
-				if params[0] != "" && len(params) == 2 {
-					postData.Set(params[0], params[1])
-					continue
-				}
-				// add double quotes since this is a string
-				arg = "\"" + arg + "\""
-			}
-			// Append to positional args
-			positionalArgs = append(positionalArgs, fmt.Sprintf("%v", arg))
-		}
-		if len(positionalArgs) > 0 {
-			paStr, _ := json.Marshal(positionalArgs)
-			postData.Set("args", string(paStr))
+		paStr := buildPositionalArgList(args)
+		if len(paStr) > 0 {
+			postData.Set("args", paStr)
 		}
 	}
 
