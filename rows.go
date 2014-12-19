@@ -12,6 +12,7 @@ package go_n1ql
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -22,12 +23,14 @@ type n1qlRows struct {
 	resultChan chan interface{}
 	errChan    chan error
 	closed     bool
+	rows       []string
 }
 
-func resultToRows(results io.Reader, resp *http.Response) (*n1qlRows, error) {
+func resultToRows(results io.Reader, resp *http.Response, signature []string) (*n1qlRows, error) {
 
 	rows := &n1qlRows{results: results,
 		resp:       resp,
+		rows:       signature,
 		resultChan: make(chan interface{}, 1),
 		errChan:    make(chan error),
 	}
@@ -59,7 +62,7 @@ func (rows *n1qlRows) populateRows() {
 }
 
 func (rows *n1qlRows) Columns() []string {
-	return []string{"results"}
+	return rows.rows
 }
 
 func (rows *n1qlRows) Close() error {
@@ -71,11 +74,24 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 	select {
 	case r, ok := <-rows.resultChan:
 		if ok {
-			if len(rows.Columns()) == 1 {
+			numColumns := len(rows.Columns())
+			if numColumns == 1 {
 				bytes, _ := json.Marshal(r)
 				dest[0] = bytes
+			} else {
+				switch resultRow := r.(type) {
+				case map[string]interface{}:
+					if len(resultRow) != numColumns {
+						return fmt.Errorf("N1QL: Columns do not match %d != %d", len(resultRow), numColumns)
+					}
+					i := 0
+					for _, value := range resultRow {
+						bytes, _ := json.Marshal(value)
+						dest[i] = bytes
+						i++
+					}
+				}
 			}
-			// else look at the signature
 			return nil
 		} else {
 			return io.EOF

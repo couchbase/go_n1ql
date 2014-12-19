@@ -76,7 +76,7 @@ func OpenN1QLConnection(name string) (driver.Conn, error) {
 	queryAPI := name + N1QL_SERVICE_ENDPOINT
 	conn := &n1qlConn{client: HTTPClient, buffer: buffered.NewSyncPool(N1QL_POOL_SIZE), queryAPI: queryAPI}
 
-	request, err := prepareRequest(N1QL_DEFAULT_STATEMENT, queryAPI, nil, false)
+	request, err := prepareRequest(N1QL_DEFAULT_STATEMENT, queryAPI, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +96,12 @@ func OpenN1QLConnection(name string) (driver.Conn, error) {
 }
 
 func (conn *n1qlConn) Prepare(query string) (driver.Stmt, error) {
+	var argCount int
 
-	request, err := prepareRequest(query, conn.queryAPI, nil, true)
+	query = "PREPARE " + query
+	query, argCount = prepareQuery(query)
+
+	request, err := prepareRequest(query, conn.queryAPI, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +126,7 @@ func (conn *n1qlConn) Prepare(query string) (driver.Stmt, error) {
 		return nil, fmt.Errorf("N1QL: Failed to parse response. Error %v", err)
 	}
 
-	stmt := &n1qlStmt{conn: conn}
+	stmt := &n1qlStmt{conn: conn, argCount: argCount}
 
 	for name, results := range resultMap {
 		switch name {
@@ -153,27 +157,24 @@ func (conn *n1qlConn) Close() error {
 	return nil
 }
 
-// Executes a query that returns a set of Rows.
-// Select statements should use this interface
-func (conn *n1qlConn) Query(query string, args []driver.Value) (driver.Rows, error) {
+func decodeSignature(signature *json.RawMessage) []string {
 
-	if len(args) > 0 {
-		var argCount int
-		query, argCount = prepareQuery(query)
-		if argCount != len(args) {
-			return nil, fmt.Errorf("Argument count mismatch %d != %d", argCount, len(args))
-		}
-		query = preparePositionalArgs(query, args)
+	var sign map[string]interface{}
+	rows := make([]string, 0)
+	json.Unmarshal(*signature, &sign)
+
+	for row, _ := range sign {
+		rows = append(rows, row)
 	}
 
-	request, err := prepareRequest(query, conn.queryAPI, args, false)
-	if err != nil {
-		return nil, err
-	}
+	return rows
+}
+
+func (conn *n1qlConn) performQuery(request *http.Request) (driver.Rows, error) {
 
 	resp, err := conn.client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("N1QL: Failed to execute query %s Error  %v", query, err)
+		return nil, fmt.Errorf("N1QL: Failed to execute query Error  %v", err)
 	}
 
 	if resp.StatusCode != 200 {
@@ -189,19 +190,22 @@ func (conn *n1qlConn) Query(query string, args []driver.Value) (driver.Rows, err
 		return nil, fmt.Errorf(" N1QL: Failed to decode result %v", err)
 	}
 
+	var signature []string
 	for name, results := range resultMap {
-		if name == "results" {
-
-			return resultToRows(bytes.NewReader(*results), resp)
+		switch name {
+		case "signature":
+			signature = decodeSignature(results)
+		case "results":
+			return resultToRows(bytes.NewReader(*results), resp, signature)
 		}
 	}
-
 	return nil, err
+
 }
 
-// Execer implementation. To be used for queries that do not return any rows
-// such as Create Index, Insert, Upset, Delete etc
-func (conn *n1qlConn) Exec(query string, args []driver.Value) (driver.Result, error) {
+// Executes a query that returns a set of Rows.
+// Select statements should use this interface
+func (conn *n1qlConn) Query(query string, args []driver.Value) (driver.Rows, error) {
 
 	if len(args) > 0 {
 		var argCount int
@@ -209,17 +213,21 @@ func (conn *n1qlConn) Exec(query string, args []driver.Value) (driver.Result, er
 		if argCount != len(args) {
 			return nil, fmt.Errorf("Argument count mismatch %d != %d", argCount, len(args))
 		}
-		query = preparePositionalArgs(query, args)
+		query, args = preparePositionalArgs(query, argCount, args)
 	}
 
-	request, err := prepareRequest(query, conn.queryAPI, args, false)
+	request, err := prepareRequest(query, conn.queryAPI, args)
 	if err != nil {
 		return nil, err
 	}
 
+	return conn.performQuery(request)
+}
+
+func (conn *n1qlConn) performExec(request *http.Request) (driver.Result, error) {
 	resp, err := conn.client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("N1QL: Failed to execute query %s Error  %v", query, err)
+		return nil, fmt.Errorf("N1QL: Failed to execute query Error  %v", err)
 	}
 
 	if resp.StatusCode != 200 {
@@ -252,13 +260,34 @@ func (conn *n1qlConn) Exec(query string, args []driver.Value) (driver.Result, er
 	}
 
 	return res, nil
+
+}
+
+// Execer implementation. To be used for queries that do not return any rows
+// such as Create Index, Insert, Upset, Delete etc
+func (conn *n1qlConn) Exec(query string, args []driver.Value) (driver.Result, error) {
+
+	if len(args) > 0 {
+		var argCount int
+		query, argCount = prepareQuery(query)
+		if argCount != len(args) {
+			return nil, fmt.Errorf("Argument count mismatch %d != %d", argCount, len(args))
+		}
+		query, args = preparePositionalArgs(query, argCount, args)
+	}
+
+	request, err := prepareRequest(query, conn.queryAPI, args)
+	if err != nil {
+		return nil, err
+	}
+
+	return conn.performExec(request)
 }
 
 func prepareQuery(query string) (string, int) {
 
 	var count int
-	query = strings.Replace(query, "?", "@", -1)
-	re := regexp.MustCompile("@")
+	re := regexp.MustCompile("\\?")
 
 	f := func(s string) string {
 		count++
@@ -267,42 +296,58 @@ func prepareQuery(query string) (string, int) {
 	return re.ReplaceAllStringFunc(query, f), count
 }
 
-func preparePositionalArgs(query string, args []driver.Value) string {
+//
+// Replace the conditional pqrams in the query and return the list of left-over args
+func preparePositionalArgs(query string, argCount int, args []driver.Value) (string, []driver.Value) {
 	subList := make([]string, 0)
+	newArgs := make([]driver.Value, 0)
 
 	for i, arg := range args {
-		sub := []string{fmt.Sprintf("$%d", i+1), fmt.Sprintf("%v", arg)}
-		subList = append(subList, sub...)
+		if i < argCount {
+			var a string
+			switch arg := arg.(type) {
+			case string:
+				a = fmt.Sprintf("\"%v\"", arg)
+			default:
+				a = fmt.Sprintf("%v", arg)
+			}
+			sub := []string{fmt.Sprintf("$%d", i+1), a}
+			subList = append(subList, sub...)
+		} else {
+			newArgs = append(newArgs, arg)
+		}
 	}
 	r := strings.NewReplacer(subList...)
-	return r.Replace(query)
+	return r.Replace(query), newArgs
 }
 
 // prepare a http request for the query
 //
-func prepareRequest(query string, queryAPI string, args []driver.Value, prepare bool) (*http.Request, error) {
+func prepareRequest(query string, queryAPI string, args []driver.Value) (*http.Request, error) {
 
 	postData := url.Values{}
+	postData.Set("statement", query)
 
-	if query == "" {
-		if len(args) > 0 {
-			for _, arg := range args {
-				switch arg := arg.(type) {
-				case string:
-					params := strings.SplitN(arg, ":", 2)
-					if params[0] != "" && len(params) == 2 {
-						postData.Set(params[0], params[1])
-					}
+	if len(args) > 0 {
+		positionalArgs := make([]string, 0)
+		for _, arg := range args {
+			switch arg := arg.(type) {
+			case string:
+				params := strings.SplitN(arg, ":", 2)
+				if params[0] != "" && len(params) == 2 {
+					postData.Set(params[0], params[1])
+					continue
 				}
+				// add double quotes since this is a string
+				arg = "\"" + arg + "\""
 			}
-		} else {
-			return nil, fmt.Errorf("N1QL: Insufficient number of arguments")
+			// Append to positional args
+			positionalArgs = append(positionalArgs, fmt.Sprintf("%v", arg))
 		}
-	} else {
-		if prepare == true {
-			query = "PREPARE " + query
+		if len(positionalArgs) > 0 {
+			paStr, _ := json.Marshal(positionalArgs)
+			postData.Set("args", string(paStr))
 		}
-		postData.Set("statement", query)
 	}
 
 	request, _ := http.NewRequest("POST", queryAPI, bytes.NewBufferString(postData.Encode()))
@@ -315,6 +360,7 @@ type n1qlStmt struct {
 	conn      *n1qlConn
 	prepared  string
 	signature string
+	argCount  int
 }
 
 func (stmt *n1qlStmt) Close() error {
@@ -322,29 +368,69 @@ func (stmt *n1qlStmt) Close() error {
 }
 
 func (stmt *n1qlStmt) NumInput() int {
-	return -1
+	return stmt.argCount
+}
+
+// prepare a http request for the query
+//
+func (stmt *n1qlStmt) prepareRequest(args []driver.Value) (*http.Request, error) {
+
+	postData := url.Values{}
+	postData.Set("prepared", stmt.prepared)
+
+	if len(args) < stmt.NumInput() {
+		return nil, fmt.Errorf("N1QL: Insufficient args. Prepared statement contains positional args")
+	}
+
+	if len(args) > 0 {
+		positionalArgs := make([]string, 0)
+		for _, arg := range args {
+			switch arg := arg.(type) {
+			case string:
+				params := strings.SplitN(arg, ":", 2)
+				if params[0] != "" && len(params) == 2 {
+					postData.Set(params[0], params[1])
+					continue
+				}
+				// add double quotes since this is a string
+				arg = "\"" + arg + "\""
+			}
+			// Append to positional args
+			positionalArgs = append(positionalArgs, fmt.Sprintf("%v", arg))
+		}
+		if len(positionalArgs) > 0 {
+			paStr, _ := json.Marshal(positionalArgs)
+			postData.Set("args", string(paStr))
+		}
+	}
+
+	request, _ := http.NewRequest("POST", stmt.conn.queryAPI, bytes.NewBufferString(postData.Encode()))
+	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	return request, nil
 }
 
 func (stmt *n1qlStmt) Query(args []driver.Value) (driver.Rows, error) {
 	if stmt.prepared == "" {
 		return nil, fmt.Errorf("N1QL: Prepared statement not found")
 	}
-	pArgs := make([]driver.Value, 1)
-	prepared := "prepared:" + stmt.prepared
-	pArgs[0] = prepared
-	args = append(pArgs, args...)
 
-	return stmt.conn.Query("", args)
+	request, err := stmt.prepareRequest(args)
+	if err != nil {
+		return nil, err
+	}
+
+	return stmt.conn.performQuery(request)
 }
 
 func (stmt *n1qlStmt) Exec(args []driver.Value) (driver.Result, error) {
 	if stmt.prepared == "" {
 		return nil, fmt.Errorf("N1QL: Prepared statement not found")
 	}
-	pArgs := make([]driver.Value, 1)
-	prepared := "prepared:" + stmt.prepared
-	pArgs[0] = prepared
-	args = append(pArgs, args...)
+	request, err := stmt.prepareRequest(args)
+	if err != nil {
+		return nil, err
+	}
 
-	return stmt.conn.Exec("", args)
+	return stmt.conn.performExec(request)
 }

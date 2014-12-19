@@ -18,47 +18,50 @@ func main() {
 		log.Fatal(err)
 	}
 
-	name := "Jane"
-	_, err = n1ql.Query("Select * from contacts where name = ? and age != ?", name, 5)
+	name := "dave"
+	rows, err := n1ql.Query("select * from contacts unnest contacts.children where contacts.name = ? and children.age > ?", name, 10)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	/*
-		rows, err := n1ql.Query("Select * from `beer-sample` limit 5")
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var beer string
-			if err := rows.Scan(&beer); err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("Row returned %s : \n", beer)
-		}
-
-		if err := rows.Err(); err != nil {
-			log.Fatal(err)
-		}
-
-		// Scan
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
 		var beer string
-		id := "Minnesota"
-		err = n1ql.QueryRow("select * from `beer-sample` where state=?", id).Scan(&beer)
-
-		switch {
-		case err == sql.ErrNoRows:
-			log.Printf("No user with that ID.")
-		case err != nil:
+		if err := rows.Scan(&beer); err != nil {
 			log.Fatal(err)
-		default:
-			log.Printf("Row is is %s\n", beer)
 		}
-	*/
+		log.Printf("Row returned %s : \n", beer)
+	}
 
+	if err := rows.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	// prepared statements with positional args
+
+	stmt, err := n1ql.Prepare("select personal_details, shipped_order_history from users_with_orders where doc_type=? and personal_details.age = ?")
+
+	rows, err = stmt.Query("user_profile", 60)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var beer string
+		if err := rows.Scan(&beer); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Row returned %s : \n", beer)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Fatal(err)
+	}
 }
