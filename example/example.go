@@ -6,11 +6,12 @@ import (
 	"fmt"
 	_ "github.com/couchbaselabs/go_n1ql"
 	"log"
+	"os"
 )
 
 func main() {
 
-	n1ql, err := sql.Open("n1ql", "http://localhost:8093")
+	n1ql, err := sql.Open("n1ql", "localhost:8093")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -19,6 +20,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// Set query parameters
+	os.Setenv("n1ql_timeout", "10s")
+	ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
+	os.Setenv("n1ql_creds", string(ac))
 
 	name := "dave"
 	rows, err := n1ql.Query("select * from contacts unnest contacts.children where contacts.name = ? and children.age > ?", name, 10)
@@ -112,5 +118,27 @@ func main() {
 	}
 
 	log.Printf("Total Rows Affected %d", rowsAffected)
+
+	stmt.Close()
+	result, err = stmt.Exec("test", "this shouldn't work")
+	if err == nil {
+		log.Fatal("Statement not closed")
+	}
+
+	result, err = n1ql.Exec("delete from contacts use keys ? ", "irish")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	keys := make([]string, 0)
+	for i := 0; i < 20; i++ {
+		keys = append(keys, fmt.Sprintf("irish%d", i))
+	}
+
+	value, _ = json.Marshal(keys)
+	result, err = n1ql.Exec("delete from contacts use keys ?", value)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 }

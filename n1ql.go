@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 
@@ -73,7 +74,7 @@ func OpenN1QLConnection(name string) (driver.Conn, error) {
 	}
 
 	name = strings.TrimSuffix(name, "/")
-	queryAPI := name + N1QL_SERVICE_ENDPOINT
+	queryAPI := "http://" + name + N1QL_SERVICE_ENDPOINT
 	conn := &n1qlConn{client: HTTPClient, buffer: buffered.NewSyncPool(N1QL_POOL_SIZE), queryAPI: queryAPI}
 
 	request, err := prepareRequest(N1QL_DEFAULT_STATEMENT, queryAPI, nil)
@@ -254,7 +255,7 @@ func (conn *n1qlConn) performExec(request *http.Request) (driver.Result, error) 
 		return nil, fmt.Errorf("N1QL: Failed to parse response. Error %v", err)
 	}
 
-	var res *n1qlResult
+	res := &n1qlResult{}
 	for name, results := range resultMap {
 		switch name {
 		case "metrics":
@@ -263,7 +264,9 @@ func (conn *n1qlConn) performExec(request *http.Request) (driver.Result, error) 
 			if err != nil {
 				return nil, fmt.Errorf("N1QL: Failed to unmarshal response. Error %v", err)
 			}
-			res = &n1qlResult{affectedRows: int64(metrics["mutationCount"].(float64))}
+			if mc, ok := metrics["mutationCount"]; ok {
+				res.affectedRows = int64(mc.(float64))
+			}
 			break
 		}
 	}
@@ -346,10 +349,50 @@ func prepareRequest(query string, queryAPI string, args []driver.Value) (*http.R
 		}
 	}
 
+	setQueryParams(&postData)
 	request, _ := http.NewRequest("POST", queryAPI, bytes.NewBufferString(postData.Encode()))
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	return request, nil
+}
+
+//
+// Set query params
+
+func setQueryParams(v *url.Values) {
+
+	if timeout := os.Getenv("n1ql_timeout"); timeout != "" {
+		v.Set("timeout", timeout)
+	}
+
+	if encoding := os.Getenv("n1ql_encoding"); encoding != "" {
+		v.Set("encoding", encoding)
+	}
+
+	if compression := os.Getenv("n1ql_compression"); compression != "" {
+		v.Set("compression", compression)
+	}
+
+	if scan_consistency := os.Getenv("n1ql_scan_consistency"); scan_consistency != "" {
+		v.Set("scan_consistency", scan_consistency)
+	}
+
+	if scan_vector := os.Getenv("n1ql_scan_vector"); scan_vector != "" {
+		v.Set("scan_vector", scan_vector)
+	}
+
+	if scan_wait := os.Getenv("n1ql_scan_wait"); scan_wait != "" {
+		v.Set("scan_wait", scan_wait)
+	}
+
+	if creds := os.Getenv("n1ql_creds"); creds != "" {
+		v.Set("creds", creds)
+	}
+
+	if client_context_id := os.Getenv("n1ql_client_context_id"); client_context_id != "" {
+		v.Set("client_context_id", client_context_id)
+	}
+
 }
 
 type n1qlStmt struct {
@@ -416,6 +459,8 @@ func (stmt *n1qlStmt) prepareRequest(args []driver.Value) (*http.Request, error)
 			postData.Set("args", paStr)
 		}
 	}
+
+	setQueryParams(&postData)
 
 	request, _ := http.NewRequest("POST", stmt.conn.queryAPI, bytes.NewBufferString(postData.Encode()))
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
