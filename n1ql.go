@@ -22,8 +22,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-
-	buffered "github.com/couchbaselabs/query/server/http"
 )
 
 // Common error codes
@@ -58,7 +56,6 @@ func (n *n1qlDrv) Open(name string) (driver.Conn, error) {
 type n1qlConn struct {
 	clusterAddr string
 	queryAPI    string
-	buffer      buffered.BufferPool
 	client      *http.Client
 }
 
@@ -75,7 +72,7 @@ func OpenN1QLConnection(name string) (driver.Conn, error) {
 
 	name = strings.TrimSuffix(name, "/")
 	queryAPI := "http://" + name + N1QL_SERVICE_ENDPOINT
-	conn := &n1qlConn{client: HTTPClient, buffer: buffered.NewSyncPool(N1QL_POOL_SIZE), queryAPI: queryAPI}
+	conn := &n1qlConn{client: HTTPClient, queryAPI: queryAPI}
 
 	request, err := prepareRequest(N1QL_DEFAULT_STATEMENT, queryAPI, nil)
 	if err != nil {

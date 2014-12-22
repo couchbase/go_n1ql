@@ -11,18 +11,20 @@ package go_n1ql
 
 import (
 	"database/sql/driver"
-	"fmt"
 	"io"
 	"testing"
 )
 
+// To run these tests against cbq-engine. Run :
+// ./server/cbq-engine/cbq-engine -datastore=dir:./test/json
+
 func TestConnection(t *testing.T) {
-	conn, err := OpenN1QLConnection("http://localhost:8093")
+	conn, err := OpenN1QLConnection("localhost:8093")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	results, err := conn.(*n1qlConn).Query("select * from `beer-sample`", nil)
+	results, err := conn.(*n1qlConn).Query("select * from contacts", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,11 +35,11 @@ func TestConnection(t *testing.T) {
 		totalRows++
 	}
 
-	if totalRows != 7303 {
-		t.Fatal(" Got the wrong number of rows ", totalRows)
+	if totalRows == 0 {
+		t.Fatal("Query returned 0 rows")
 	}
 
-	results, err = conn.(*n1qlConn).Query("select * from `gamesim-sample`", nil)
+	results, err = conn.(*n1qlConn).Query("select * from contacts where type = \"contact\"", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,13 +47,16 @@ func TestConnection(t *testing.T) {
 	totalRows = 0
 	for results.Next(result) != io.EOF {
 		totalRows++
-		if totalRows == 100 {
+		if totalRows == 3 {
 			results.Close()
 		}
 	}
-	fmt.Printf(" Got %d rows from gamesim-sample", totalRows)
 
-	stmt, err := conn.Prepare("select * from `beer-sample` where `beer-sample`.type = \"beer\" limit 10")
+	if totalRows != 4 {
+		t.Fatal("Expecting 4 rows got %d", totalRows)
+	}
+
+	stmt, err := conn.Prepare("select * from contacts where type = \"contact\" limit 5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,14 +70,24 @@ func TestConnection(t *testing.T) {
 	for results.Next(result) != io.EOF {
 		totalRows++
 	}
-	fmt.Printf(" Got %d rows from the last query", totalRows)
 
-	res, err := conn.(*n1qlConn).Exec("upsert into default key \"irish2\" values {\"name\":\"irish\", \"type\":\"contact\"}\"", nil)
+	if totalRows != 5 {
+		t.Fatal(" Got %d Rows instead of 5", totalRows)
+	}
+
+	res, err := conn.(*n1qlConn).Exec("upsert into contacts key \"irish2\" values {\"name\":\"irish\", \"type\":\"contact\"}\"", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	ra, _ := res.RowsAffected()
-	fmt.Printf(" Number of rows inserted %d", ra)
+	if ra != 1 {
+		t.Fatal("Insert failed.")
+	}
+
+	res, err = conn.(*n1qlConn).Exec("delete from contacts use keys \"irish2\"", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 }
