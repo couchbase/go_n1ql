@@ -22,6 +22,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/couchbaselabs/go-couchbase"
 )
 
 // Common error codes
@@ -64,14 +66,98 @@ var MaxIdleConnsPerHost = 10
 var HTTPTransport = &http.Transport{MaxIdleConnsPerHost: MaxIdleConnsPerHost}
 var HTTPClient = &http.Client{Transport: HTTPTransport}
 
-func OpenN1QLConnection(name string) (driver.Conn, error) {
+func discoverN1QLService(name string, ps couchbase.PoolServices) string {
 
-	if _, err := url.Parse(name); err != nil {
-		return nil, fmt.Errorf("N1QL: Invalid url %s", name)
+	for _, ns := range ps.NodesExt {
+		if ns.Services != nil {
+			if port, ok := ns.Services["n1ql"]; ok == true {
+				var hostname string
+				//n1ql service found
+				if ns.ThisNode == true {
+					hostUrl, _ := url.Parse(name)
+					hostname = hostUrl.Host
+				}
+				hostname = ns.Hostname
+				host := strings.Split(hostname, ":")
+				return fmt.Sprintf("%s:%d", host[0], port)
+			}
+		}
+	}
+	return ""
+}
+
+func getQueryApi(n1qlEndPoint string) (string, error) {
+
+	queryAdmin := "http://" + n1qlEndPoint + "/admin/clusters/default/nodes"
+	request, _ := http.NewRequest("GET", queryAdmin, nil)
+	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := HTTPClient.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("N1QL: Failed to execute query Error  %v", err)
 	}
 
-	name = strings.TrimSuffix(name, "/")
-	queryAPI := "http://" + name + N1QL_SERVICE_ENDPOINT
+	if resp.StatusCode != 200 {
+		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("N1QL: Failed to execute query %s", bod)
+	}
+
+	var nodesInfo []interface{}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("N1QL: Failed to read response body from server. Error %v", err)
+	}
+
+	if err := json.Unmarshal(body, &nodesInfo); err != nil {
+		return "", fmt.Errorf("N1QL: Failed to parse response. Error %v", err)
+	}
+
+	numQueryNodes := len(nodesInfo)
+	sn := 0
+	if numQueryNodes > 1 {
+		// randomly select one of the nodes
+	}
+	selectedNode := nodesInfo[sn]
+
+	switch selectedNode := selectedNode.(type) {
+	case map[string]interface{}:
+		return selectedNode["queryEndpoint"].(string), nil
+	}
+
+	return "", fmt.Errorf("Query endpoint not found")
+}
+
+func OpenN1QLConnection(name string) (driver.Conn, error) {
+
+	var queryAPI string
+
+	if strings.HasPrefix(name, "http://") {
+		// cluster endpoint
+		client, err := couchbase.Connect(name)
+		if err != nil {
+			return nil, fmt.Errorf("N1QL: Unable to connect to cluster endpoint. Error %v", err)
+		}
+
+		ps, err := client.GetPoolServices("default")
+		if err != nil {
+			return nil, fmt.Errorf("N1QL: Failed to get NodeServices list. Error %v", err)
+		}
+
+		n1qlEndPoint := discoverN1QLService(name, ps)
+		if n1qlEndPoint == "" {
+			return nil, fmt.Errorf("N1QL: No query service found on this cluster")
+		}
+
+		queryAPI, err = getQueryApi(n1qlEndPoint)
+		if err != nil {
+			return nil, err
+		}
+
+	} else {
+		name = strings.TrimSuffix(name, "/")
+		queryAPI = "http://" + name + N1QL_SERVICE_ENDPOINT
+	}
+
 	conn := &n1qlConn{client: HTTPClient, queryAPI: queryAPI}
 
 	request, err := prepareRequest(N1QL_DEFAULT_STATEMENT, queryAPI, nil)
