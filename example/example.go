@@ -28,20 +28,17 @@ func main() {
 
 	name := "dave"
 	rows, err := n1ql.Query("select * from contacts unnest contacts.children where contacts.name = ? and children.age > ?", name, 10)
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var beer string
-		if err := rows.Scan(&beer); err != nil {
+		var contacts string
+		if err := rows.Scan(&contacts); err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("Row returned %s : \n", beer)
+		log.Printf("Row returned %s : \n", contacts)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -57,9 +54,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err != nil {
-		log.Fatal(err)
-	}
 	defer rows.Close()
 	for rows.Next() {
 		var personal, shipped string
