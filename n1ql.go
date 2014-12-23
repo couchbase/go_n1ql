@@ -17,11 +17,13 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/couchbaselabs/go-couchbase"
 )
@@ -57,7 +59,7 @@ func (n *n1qlDrv) Open(name string) (driver.Conn, error) {
 // implements driver.Conn interface
 type n1qlConn struct {
 	clusterAddr string
-	queryAPI    string
+	queryAPIs   []string
 	client      *http.Client
 }
 
@@ -73,64 +75,64 @@ func discoverN1QLService(name string, ps couchbase.PoolServices) string {
 			if port, ok := ns.Services["n1ql"]; ok == true {
 				var hostname string
 				//n1ql service found
-				if ns.ThisNode == true {
+				if ns.Hostname == "" {
 					hostUrl, _ := url.Parse(name)
-					hostname = hostUrl.Host
+					hn := hostUrl.Host
+					hostname = strings.Split(hn, ":")[0]
+				} else {
+					hostname = ns.Hostname
 				}
-				hostname = ns.Hostname
-				host := strings.Split(hostname, ":")
-				return fmt.Sprintf("%s:%d", host[0], port)
+				return fmt.Sprintf("%s:%d", hostname, port)
 			}
 		}
 	}
 	return ""
 }
 
-func getQueryApi(n1qlEndPoint string) (string, error) {
+func getQueryApi(n1qlEndPoint string) ([]string, error) {
 
 	queryAdmin := "http://" + n1qlEndPoint + "/admin/clusters/default/nodes"
 	request, _ := http.NewRequest("GET", queryAdmin, nil)
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	queryAPIs := make([]string, 0)
 
 	resp, err := HTTPClient.Do(request)
 	if err != nil {
-		return "", fmt.Errorf("N1QL: Failed to execute query Error  %v", err)
+		return nil, fmt.Errorf("N1QL: Failed to execute query Error  %v", err)
 	}
 
 	if resp.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("N1QL: Failed to execute query %s", bod)
+		return nil, fmt.Errorf("N1QL: Failed to execute query %s", bod)
 	}
 
 	var nodesInfo []interface{}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("N1QL: Failed to read response body from server. Error %v", err)
+		return nil, fmt.Errorf("N1QL: Failed to read response body from server. Error %v", err)
 	}
 
 	if err := json.Unmarshal(body, &nodesInfo); err != nil {
-		return "", fmt.Errorf("N1QL: Failed to parse response. Error %v", err)
+		return nil, fmt.Errorf("N1QL: Failed to parse response. Error %v", err)
 	}
 
-	numQueryNodes := len(nodesInfo)
-	sn := 0
-	if numQueryNodes > 1 {
-		// randomly select one of the nodes
-	}
-	selectedNode := nodesInfo[sn]
-
-	switch selectedNode := selectedNode.(type) {
-	case map[string]interface{}:
-		return selectedNode["queryEndpoint"].(string), nil
+	for _, queryNode := range nodesInfo {
+		switch queryNode := queryNode.(type) {
+		case map[string]interface{}:
+			queryAPIs = append(queryAPIs, queryNode["queryEndpoint"].(string))
+		}
 	}
 
-	return "", fmt.Errorf("Query endpoint not found")
+	if len(queryAPIs) == 0 {
+		return nil, fmt.Errorf("Query endpoints not found")
+	}
+
+	return queryAPIs, nil
 }
 
 func OpenN1QLConnection(name string) (driver.Conn, error) {
 
-	var queryAPI string
-
+	var queryAPIs []string
 	if strings.HasPrefix(name, "http://") {
 		// cluster endpoint
 		client, err := couchbase.Connect(name)
@@ -148,19 +150,21 @@ func OpenN1QLConnection(name string) (driver.Conn, error) {
 			return nil, fmt.Errorf("N1QL: No query service found on this cluster")
 		}
 
-		queryAPI, err = getQueryApi(n1qlEndPoint)
+		queryAPIs, err = getQueryApi(n1qlEndPoint)
 		if err != nil {
 			return nil, err
 		}
 
 	} else {
 		name = strings.TrimSuffix(name, "/")
-		queryAPI = "http://" + name + N1QL_SERVICE_ENDPOINT
+		queryAPI := "http://" + name + N1QL_SERVICE_ENDPOINT
+		queryAPIs = make([]string, 1, 1)
+		queryAPIs[0] = queryAPI
 	}
 
-	conn := &n1qlConn{client: HTTPClient, queryAPI: queryAPI}
+	conn := &n1qlConn{client: HTTPClient, queryAPIs: queryAPIs}
 
-	request, err := prepareRequest(N1QL_DEFAULT_STATEMENT, queryAPI, nil)
+	request, err := prepareRequest(N1QL_DEFAULT_STATEMENT, queryAPIs[0], nil)
 	if err != nil {
 		return nil, err
 	}
@@ -179,20 +183,58 @@ func OpenN1QLConnection(name string) (driver.Conn, error) {
 	return conn, nil
 }
 
+// do client request with retry
+func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (*http.Response, error) {
+
+	ok := false
+	for !ok {
+
+		var request *http.Request
+		var err error
+
+		// select query API
+		rand.Seed(time.Now().Unix())
+		numNodes := len(conn.queryAPIs)
+
+		selectedNode := rand.Intn(numNodes)
+		queryAPI := conn.queryAPIs[selectedNode]
+
+		if query != "" {
+			request, err = prepareRequest(query, queryAPI, nil)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			request, _ = http.NewRequest("POST", queryAPI, bytes.NewBufferString(requestValues.Encode()))
+			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		}
+
+		resp, err := conn.client.Do(request)
+		if err != nil {
+			// if this is the last node return with error
+			if numNodes == 1 {
+				break
+			}
+			// remove the node that failed from the list of query nodes
+			conn.queryAPIs = append(conn.queryAPIs[:selectedNode], conn.queryAPIs[selectedNode+1:]...)
+			continue
+		} else {
+			return resp, nil
+		}
+	}
+
+	return nil, fmt.Errorf("N1QL: Query nodes not responding")
+}
+
 func (conn *n1qlConn) Prepare(query string) (driver.Stmt, error) {
 	var argCount int
 
 	query = "PREPARE " + query
 	query, argCount = prepareQuery(query)
 
-	request, err := prepareRequest(query, conn.queryAPI, nil)
+	resp, err := conn.doClientRequest(query, nil)
 	if err != nil {
 		return nil, err
-	}
-
-	resp, err := conn.client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("N1QL: Failed to execute query %s Error  %v", query, err)
 	}
 
 	if resp.StatusCode != 200 {
@@ -254,11 +296,11 @@ func decodeSignature(signature *json.RawMessage) []string {
 	return rows
 }
 
-func (conn *n1qlConn) performQuery(request *http.Request) (driver.Rows, error) {
+func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (driver.Rows, error) {
 
-	resp, err := conn.client.Do(request)
+	resp, err := conn.doClientRequest(query, requestValues)
 	if err != nil {
-		return nil, fmt.Errorf("N1QL: Failed to execute query Error  %v", err)
+		return nil, err
 	}
 
 	if resp.StatusCode != 200 {
@@ -309,18 +351,14 @@ func (conn *n1qlConn) Query(query string, args []driver.Value) (driver.Rows, err
 		query, args = preparePositionalArgs(query, argCount, args)
 	}
 
-	request, err := prepareRequest(query, conn.queryAPI, args)
-	if err != nil {
-		return nil, err
-	}
-
-	return conn.performQuery(request)
+	return conn.performQuery(query, nil)
 }
 
-func (conn *n1qlConn) performExec(request *http.Request) (driver.Result, error) {
-	resp, err := conn.client.Do(request)
+func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (driver.Result, error) {
+
+	resp, err := conn.doClientRequest(query, requestValues)
 	if err != nil {
-		return nil, fmt.Errorf("N1QL: Failed to execute query Error  %v", err)
+		return nil, err
 	}
 
 	if resp.StatusCode != 200 {
@@ -371,12 +409,7 @@ func (conn *n1qlConn) Exec(query string, args []driver.Value) (driver.Result, er
 		query, args = preparePositionalArgs(query, argCount, args)
 	}
 
-	request, err := prepareRequest(query, conn.queryAPI, args)
-	if err != nil {
-		return nil, err
-	}
-
-	return conn.performExec(request)
+	return conn.performExec(query, nil)
 }
 
 func prepareQuery(query string) (string, int) {
@@ -527,7 +560,7 @@ func buildPositionalArgList(args []driver.Value) string {
 
 // prepare a http request for the query
 //
-func (stmt *n1qlStmt) prepareRequest(args []driver.Value) (*http.Request, error) {
+func (stmt *n1qlStmt) prepareRequest(args []driver.Value) (*url.Values, error) {
 
 	postData := url.Values{}
 	postData.Set("prepared", stmt.prepared)
@@ -545,10 +578,7 @@ func (stmt *n1qlStmt) prepareRequest(args []driver.Value) (*http.Request, error)
 
 	setQueryParams(&postData)
 
-	request, _ := http.NewRequest("POST", stmt.conn.queryAPI, bytes.NewBufferString(postData.Encode()))
-	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-
-	return request, nil
+	return &postData, nil
 }
 
 func (stmt *n1qlStmt) Query(args []driver.Value) (driver.Rows, error) {
@@ -556,22 +586,22 @@ func (stmt *n1qlStmt) Query(args []driver.Value) (driver.Rows, error) {
 		return nil, fmt.Errorf("N1QL: Prepared statement not found")
 	}
 
-	request, err := stmt.prepareRequest(args)
+	requestValues, err := stmt.prepareRequest(args)
 	if err != nil {
 		return nil, err
 	}
 
-	return stmt.conn.performQuery(request)
+	return stmt.conn.performQuery("", requestValues)
 }
 
 func (stmt *n1qlStmt) Exec(args []driver.Value) (driver.Result, error) {
 	if stmt.prepared == "" {
 		return nil, fmt.Errorf("N1QL: Prepared statement not found")
 	}
-	request, err := stmt.prepareRequest(args)
+	requestValues, err := stmt.prepareRequest(args)
 	if err != nil {
 		return nil, err
 	}
 
-	return stmt.conn.performExec(request)
+	return stmt.conn.performExec("", requestValues)
 }

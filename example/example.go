@@ -68,7 +68,7 @@ func main() {
 	}
 
 	// Exec examples
-	result, err := n1ql.Exec("Upsert INTO contacts KEY \"irish3\" VALUES {\"name\":\"irish\", \"type\":\"contact\"}")
+	result, err := n1ql.Exec("Upsert INTO contacts values (\"irish\",{\"name\":\"irish\", \"type\":\"contact\"})")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func main() {
 	}
 	log.Printf("Rows affected %d", rowsAffected)
 
-	stmt, err = n1ql.Prepare("Upsert INTO contacts KEY ?  VALUES ?")
+	stmt, err = n1ql.Prepare("Upsert INTO contacts values (?,?)")
 	if err != nil {
 		log.Fatal(err)
 	}
