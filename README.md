@@ -22,7 +22,7 @@ The library implements the standard golang database APIs at
 ## Imports 
 
     To use the go_n1ql driver the following two imports are required 
-```
+```go
     import (
         "database/sql"
         _ "github.com/couchbaselabs/go_n1ql"
@@ -35,11 +35,11 @@ go_n1ql driver allows you to connect either to a standalone instance of n1ql or 
 the couchbase cluster endpoint. 
 
 * Connect to a standalone N1QL instance :
-```
+```go
    n1ql, err := sql.Open("n1ql", "localhost:8093")
 ```
 * Connect to a couchbase cluster:
-```
+```go
     n1ql, err := sql.Open("n1ql", "http://localhost:9000/")
 ```
 The driver will discover the n1ql endpoints in the cluster and connect to one of them.
@@ -49,7 +49,7 @@ The driver will discover the n1ql endpoints in the cluster and connect to one of
 Various Query options are supported by go_n1ql, these need to be set by calling os.Setenv in 
 your application
 
-```
+```go
     os.Setenv("n1ql_timeout", "10s")
     ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
     os.Setenv("n1ql_creds", string(ac))
@@ -72,7 +72,7 @@ your application
 
 * Running queries without positional parameters 
 
-```
+```go
     rows, err := n1ql.Query("select * from contacts where contacts.name = \"dave\"")
     if err != nil {
         log.Fatal(err)
@@ -92,7 +92,7 @@ database is treated as a row. For queries of the form **SELECT * FROM bucket** t
 returned in a single column. Queries where the result expression is not * will return the results in 
 multiple columns. e.g
 
-```
+```go
     rows, err := n1ql.Query("select personal_details, shipped_order_history from users_with_orders where doc_type=\"user_profile\" and personal_details.age = 60")
 
     if err != nil {
@@ -114,7 +114,7 @@ multiple columns. e.g
 Positional paramters are supported by Queryer/Execer interface and by Statememt (prepared statement) interface
 eg. of a Prepared statement with positional parameters 
 
-```
+```go
     stmt, err := n1ql.Prepare("select personal_details, shipped_order_history from users_with_orders where doc_type=? and personal_details.age = ?")
 
     rows, err = stmt.Query("user_profile", 60)
@@ -142,12 +142,12 @@ any rows, instead the number of rows mutated/modified will be returned
 
 * Example usuage of the Execer interface
 
-```
-    result, err := n1ql.Exec("Upsert INTO contacts KEY \"irish3\" VALUES {\"name\":\"irish\", \"type\":\"contact\"}")
+```go
+    result, err := n1ql.Exec("Upsert INTO contacts values (\"irish\",{\"name\":\"irish\", \"type\":\"contact\"})")
     if err != nil {
         log.Fatal(err)
     }
-
+ 
     rowsAffected, err := result.RowsAffected()
     if err != nil {
         log.Fatal(err)
@@ -157,8 +157,8 @@ any rows, instead the number of rows mutated/modified will be returned
 
 * Example usage of Prepared Statements with Exec
 
-```
-    stmt, err = n1ql.Prepare("Upsert INTO contacts KEY ?  VALUES ?")
+```go
+    stmt, err = n1ql.Prepare("Upsert INTO contacts values (?,?)")
     if err != nil {
         log.Fatal(err)
     }
