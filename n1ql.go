@@ -23,6 +23,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/couchbaselabs/go-couchbase"
@@ -61,6 +62,7 @@ type n1qlConn struct {
 	clusterAddr string
 	queryAPIs   []string
 	client      *http.Client
+	lock        sync.RWMutex
 }
 
 // HTTPClient to use for REST and view operations.
@@ -197,7 +199,9 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 		numNodes := len(conn.queryAPIs)
 
 		selectedNode := rand.Intn(numNodes)
+		conn.lock.RLock()
 		queryAPI := conn.queryAPIs[selectedNode]
+		conn.lock.RUnlock()
 
 		if query != "" {
 			request, err = prepareRequest(query, queryAPI, nil)
@@ -216,7 +220,9 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 				break
 			}
 			// remove the node that failed from the list of query nodes
+			conn.lock.Lock()
 			conn.queryAPIs = append(conn.queryAPIs[:selectedNode], conn.queryAPIs[selectedNode+1:]...)
+			conn.lock.Unlock()
 			continue
 		} else {
 			return resp, nil
