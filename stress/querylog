@@ -1,0 +1,5 @@
+select * from `beer-sample` where type="brewery"
+select * from `beer-sample` where category="Irish Ale"
+select * from `beer-sample` where style="Porter" limit 10
+select * from `beer-sample` where type="beer" group by style
+select * from `beer-sample` where category="Irish Ale" order by style
