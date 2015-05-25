@@ -209,7 +209,11 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 				return nil, err
 			}
 		} else {
-			request, _ = http.NewRequest("POST", queryAPI, bytes.NewBufferString(requestValues.Encode()))
+			if requestValues != nil {
+				request, _ = http.NewRequest("POST", queryAPI, bytes.NewBufferString(requestValues.Encode()))
+			} else {
+				request, _ = http.NewRequest("POST", queryAPI, nil)
+			}
 			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 		}
 
@@ -293,6 +297,7 @@ func decodeSignature(signature *json.RawMessage) []string {
 
 	var sign map[string]interface{}
 	rows := make([]string, 0)
+
 	json.Unmarshal(*signature, &sign)
 
 	for row, _ := range sign {
@@ -329,7 +334,9 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 	for name, results := range resultMap {
 		switch name {
 		case "signature":
-			signature = decodeSignature(results)
+			if results != nil {
+				signature = decodeSignature(results)
+			}
 			haveEnough++
 		case "results":
 			resultRows = results
