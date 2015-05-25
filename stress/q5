@@ -1,0 +1,1 @@
+select sum(geo.lon) from `beer-sample` where geo.lat > 40;

@@ -1,0 +1,1 @@
+select * from `beer-sample` where geo.lat > 40 order by name limit 100;

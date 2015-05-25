@@ -11,12 +11,14 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"time"
 )
 
 var serverURL = flag.String("server", "localhost:8093",
 	"couchbase server URL")
 var threads = flag.Int("threads", 10, "number of threads")
 var queryFile = flag.String("queryfile", "querylog", "file containing list of select queries")
+var repeat = flag.Int("repeat", 1, "number of times to repeat each query")
 
 var wg sync.WaitGroup
 
@@ -34,7 +36,7 @@ func main() {
 
 	for i := 0; i < *threads; i++ {
 		wg.Add(1)
-		go runQuery(*serverURL, queryLines)
+		go runQuery(*serverURL, queryLines, *repeat)
 	}
 
 	wg.Wait()
@@ -57,7 +59,7 @@ func readLines(path string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
-func runQuery(server string, queryLines []string) {
+func runQuery(server string, queryLines []string, repeat int) {
 
 	n1ql, err := sql.Open("n1ql", *serverURL)
 	if err != nil {
@@ -81,25 +83,32 @@ func runQuery(server string, queryLines []string) {
 
 	for i, query := range queryLines {
 
-		rows, err := n1ql.Query(query)
+		var avgTime time.Duration
+		for j := 0; j < repeat; j++ {
+			t0 := time.Now()
+			rows, err := n1ql.Query(query)
 
-		if err != nil {
-			log.Fatal("Error Query Line ", err, query, i)
-		}
-		defer rows.Close()
-		rowsReturned := 0
-		for rows.Next() {
-			var contacts string
-			if err := rows.Scan(&contacts); err != nil {
+			if err != nil {
+				log.Fatal("Error Query Line ", err, query, i)
+			}
+			qt := time.Now().Sub(t0)
+			avgTime = avgTime + qt
+			rowsReturned := 0
+			for rows.Next() {
+				var contacts string
+				if err := rows.Scan(&contacts); err != nil {
+					log.Fatal(err)
+				}
+				rowsReturned++
+			}
+			rows.Close()
+
+			//log.Printf("Rows returned %d : \n", rowsReturned)
+			if err := rows.Err(); err != nil {
 				log.Fatal(err)
 			}
-			rowsReturned++
 		}
-
-		log.Printf("Rows returned %d : \n", rowsReturned)
-		if err := rows.Err(); err != nil {
-			log.Fatal(err)
-		}
+		log.Printf("Average time per query %v ms \n", (avgTime.Seconds()/float64(repeat))*1000)
 
 	}
 	wg.Done()

@@ -1,0 +1,9 @@
+PM perf test 
+
+1. ./stress -queryfile="create_index.log" -threads 1
+
+Then run each of the tests 
+
+2. ./stress -queryfile="q1" -threads 10 -repeat=1000 
+
+The above command wil run the query contained in file q1 1000 times per thread

@@ -1,0 +1,4 @@
+create primary index on `beer-sample`
+create index idx1 on `beer-sample`(brewery_id) using gsi
+create index idx2 on `beer-sample`(type) using GSI
+create index idx3 on `beer-sample`(geo.lat) using GSI
