@@ -1,17 +1,15 @@
 package main
 
 import (
-	"database/sql"
-	//"encoding/json"
-	"flag"
-	//"fmt"
 	"bufio"
+	"database/sql"
+	"encoding/json"
+	"flag"
 	_ "github.com/couchbaselabs/go_n1ql"
 	"log"
 	"os"
 	"runtime"
 	"sync"
-	"time"
 )
 
 var serverURL = flag.String("server", "localhost:8093",
@@ -19,6 +17,7 @@ var serverURL = flag.String("server", "localhost:8093",
 var threads = flag.Int("threads", 10, "number of threads")
 var queryFile = flag.String("queryfile", "querylog", "file containing list of select queries")
 var repeat = flag.Int("repeat", 1, "number of times to repeat each query")
+var prepared = flag.Bool("prepared", false, "use prepared statements")
 
 var wg sync.WaitGroup
 
@@ -75,6 +74,7 @@ func runQuery(server string, queryLines []string, repeat int) {
 	os.Setenv("n1ql_timeout", "1000s")
 	ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
 	os.Setenv("n1ql_creds", string(ac))
+	os.Setenv("n1ql_measure_latency", "true")
 
 	_, err = n1ql.Exec("Create primary index on `beer-sample`")
 	if err != nil {
@@ -83,24 +83,44 @@ func runQuery(server string, queryLines []string, repeat int) {
 
 	for i, query := range queryLines {
 
-		var avgTime time.Duration
+		var lastRow string
+		var avgTime float64
+		var rows *sql.Rows
 		for j := 0; j < repeat; j++ {
-			t0 := time.Now()
-			rows, err := n1ql.Query(query)
+
+			if *prepared == true {
+				stmt, err := n1ql.Prepare(query)
+				if err != nil {
+					log.Fatal("Error in preparing statement %v", err)
+				}
+
+				rows, err = stmt.Query()
+
+				if err != nil {
+					log.Fatal("Error Query Line ", err, query, i)
+				}
+
+			} else {
+				rows, err = n1ql.Query(query)
+			}
 
 			if err != nil {
 				log.Fatal("Error Query Line ", err, query, i)
 			}
-			qt := time.Now().Sub(t0)
-			avgTime = avgTime + qt
+
 			rowsReturned := 0
 			for rows.Next() {
 				var contacts string
 				if err := rows.Scan(&contacts); err != nil {
 					log.Fatal(err)
 				}
+				lastRow = contacts
 				rowsReturned++
 			}
+			var latency interface{}
+			_ = json.Unmarshal([]byte(lastRow), &latency)
+			avgTime = avgTime + latency.(map[string]interface{})["latency"].(float64)
+
 			rows.Close()
 
 			//log.Printf("Rows returned %d : \n", rowsReturned)
@@ -108,7 +128,7 @@ func runQuery(server string, queryLines []string, repeat int) {
 				log.Fatal(err)
 			}
 		}
-		log.Printf("Average time per query %v ms \n", (avgTime.Seconds()/float64(repeat))*1000)
+		log.Printf("Average time per query %v ms\n", (avgTime / float64(repeat)))
 
 	}
 	wg.Done()

@@ -1,1 +1,1 @@
-select count(*) from `beer-sample` where type="beer";
+select * from `beer-sample` where type="beer";

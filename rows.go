@@ -24,15 +24,17 @@ type n1qlRows struct {
 	errChan    chan error
 	closed     bool
 	rows       []string
+	latency    float64
 }
 
-func resultToRows(results io.Reader, resp *http.Response, signature []string) (*n1qlRows, error) {
+func resultToRows(results io.Reader, resp *http.Response, signature []string, latency float64) (*n1qlRows, error) {
 
 	rows := &n1qlRows{results: results,
 		resp:       resp,
 		rows:       signature,
 		resultChan: make(chan interface{}, 1),
 		errChan:    make(chan error),
+		latency:    latency,
 	}
 	go rows.populateRows()
 
@@ -55,6 +57,10 @@ func (rows *n1qlRows) populateRows() {
 			break
 		}
 		rows.resultChan <- row
+	}
+
+	if rows.latency != 0 {
+		rows.resultChan <- map[string]interface{}{"latency": rows.latency}
 	}
 
 	close(rows.resultChan)

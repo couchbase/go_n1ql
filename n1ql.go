@@ -272,6 +272,7 @@ func (conn *n1qlConn) Prepare(query string) (driver.Stmt, error) {
 				return nil, fmt.Errorf("N1QL: Failed to unmarshal results %v", err)
 			}
 			serialized, _ := json.Marshal(preparedResults[0])
+			stmt.name = preparedResults[0].(map[string]interface{})["name"].(string)
 			stmt.prepared = string(serialized)
 		case "signature":
 			stmt.signature = string(*results)
@@ -309,9 +310,16 @@ func decodeSignature(signature *json.RawMessage) []string {
 
 func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (driver.Rows, error) {
 
+	var latency time.Duration
+	startTime := time.Now()
+
 	resp, err := conn.doClientRequest(query, requestValues)
 	if err != nil {
 		return nil, err
+	}
+
+	if os.Getenv("n1ql_measure_latency") != "" {
+		latency = time.Since(startTime)
 	}
 
 	if resp.StatusCode != 200 {
@@ -338,6 +346,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 				signature = decodeSignature(results)
 			}
 			haveEnough++
+
 		case "results":
 			resultRows = results
 			haveEnough++
@@ -347,7 +356,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 		}
 	}
 
-	return resultToRows(bytes.NewReader(*resultRows), resp, signature)
+	return resultToRows(bytes.NewReader(*resultRows), resp, signature, latency.Seconds()*1000)
 
 }
 
@@ -529,6 +538,7 @@ type n1qlStmt struct {
 	prepared  string
 	signature string
 	argCount  int
+	name      string
 }
 
 func (stmt *n1qlStmt) Close() error {
@@ -576,7 +586,13 @@ func buildPositionalArgList(args []driver.Value) string {
 func (stmt *n1qlStmt) prepareRequest(args []driver.Value) (*url.Values, error) {
 
 	postData := url.Values{}
-	postData.Set("prepared", stmt.prepared)
+
+	// use name prepared statement if possible
+	if stmt.name != "" {
+		postData.Set("prepared", fmt.Sprintf("\"%s\"", stmt.name))
+	} else {
+		postData.Set("prepared", stmt.prepared)
+	}
 
 	if len(args) < stmt.NumInput() {
 		return nil, fmt.Errorf("N1QL: Insufficient args. Prepared statement contains positional args")
@@ -599,12 +615,20 @@ func (stmt *n1qlStmt) Query(args []driver.Value) (driver.Rows, error) {
 		return nil, fmt.Errorf("N1QL: Prepared statement not found")
 	}
 
+retry:
 	requestValues, err := stmt.prepareRequest(args)
 	if err != nil {
 		return nil, err
 	}
 
-	return stmt.conn.performQuery("", requestValues)
+	rows, err := stmt.conn.performQuery("", requestValues)
+	if err != nil && stmt.name != "" {
+		// retry once if we used a named prepared statement
+		stmt.name = ""
+		goto retry
+	}
+
+	return rows, err
 }
 
 func (stmt *n1qlStmt) Exec(args []driver.Value) (driver.Result, error) {
