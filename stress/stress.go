@@ -3,13 +3,13 @@ package main
 import (
 	"bufio"
 	"database/sql"
-	"encoding/json"
 	"flag"
 	_ "github.com/couchbaselabs/go_n1ql"
 	"log"
 	"os"
 	"runtime"
 	"sync"
+	"time"
 )
 
 var serverURL = flag.String("server", "localhost:8093",
@@ -74,7 +74,6 @@ func runQuery(server string, queryLines []string, repeat int) {
 	os.Setenv("n1ql_timeout", "1000s")
 	ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
 	os.Setenv("n1ql_creds", string(ac))
-	os.Setenv("n1ql_measure_latency", "true")
 
 	_, err = n1ql.Exec("Create primary index on `beer-sample`")
 	if err != nil {
@@ -83,17 +82,21 @@ func runQuery(server string, queryLines []string, repeat int) {
 
 	for i, query := range queryLines {
 
-		var lastRow string
 		var avgTime float64
 		var rows *sql.Rows
+		var stmt *sql.Stmt
+
+		if *prepared == true {
+			stmt, err = n1ql.Prepare(query)
+			if err != nil {
+				log.Fatal("Error in preparing statement %v", err)
+			}
+		}
+
 		for j := 0; j < repeat; j++ {
 
+			startTime := time.Now()
 			if *prepared == true {
-				stmt, err := n1ql.Prepare(query)
-				if err != nil {
-					log.Fatal("Error in preparing statement %v", err)
-				}
-
 				rows, err = stmt.Query()
 
 				if err != nil {
@@ -108,18 +111,17 @@ func runQuery(server string, queryLines []string, repeat int) {
 				log.Fatal("Error Query Line ", err, query, i)
 			}
 
+			execTime := time.Since(startTime)
+			avgTime = avgTime + float64(execTime.Seconds()*1000)
+
 			rowsReturned := 0
 			for rows.Next() {
 				var contacts string
 				if err := rows.Scan(&contacts); err != nil {
 					log.Fatal(err)
 				}
-				lastRow = contacts
 				rowsReturned++
 			}
-			var latency interface{}
-			_ = json.Unmarshal([]byte(lastRow), &latency)
-			avgTime = avgTime + latency.(map[string]interface{})["latency"].(float64)
 
 			rows.Close()
 
@@ -128,9 +130,10 @@ func runQuery(server string, queryLines []string, repeat int) {
 				log.Fatal(err)
 			}
 		}
-		log.Printf("Average time per query %v ms\n", (avgTime / float64(repeat)))
+		if avgTime != 0 {
+			log.Printf("Average time per query %v ms\n", (avgTime / float64(repeat)))
+		}
 
 	}
 	wg.Done()
-
 }

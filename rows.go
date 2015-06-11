@@ -24,17 +24,15 @@ type n1qlRows struct {
 	errChan    chan error
 	closed     bool
 	rows       []string
-	latency    float64
 }
 
-func resultToRows(results io.Reader, resp *http.Response, signature []string, latency float64) (*n1qlRows, error) {
+func resultToRows(results io.Reader, resp *http.Response, signature []string) (*n1qlRows, error) {
 
 	rows := &n1qlRows{results: results,
 		resp:       resp,
 		rows:       signature,
 		resultChan: make(chan interface{}, 1),
 		errChan:    make(chan error),
-		latency:    latency,
 	}
 	go rows.populateRows()
 
@@ -59,10 +57,6 @@ func (rows *n1qlRows) populateRows() {
 		rows.resultChan <- row
 	}
 
-	if rows.latency != 0 {
-		rows.resultChan <- map[string]interface{}{"latency": rows.latency}
-	}
-
 	close(rows.resultChan)
 
 }
@@ -81,6 +75,7 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 	case r, ok := <-rows.resultChan:
 		if ok {
 			numColumns := len(rows.Columns())
+
 			if numColumns == 1 {
 				bytes, _ := json.Marshal(r)
 				dest[0] = bytes
@@ -88,7 +83,7 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 				switch resultRow := r.(type) {
 				case map[string]interface{}:
 					if len(resultRow) != numColumns {
-						return fmt.Errorf("N1QL: Columns do not match %d != %d", len(resultRow), numColumns)
+						return fmt.Errorf("N1QL: Columns do not match %d != %d r %v", len(resultRow), numColumns, r)
 					}
 					i := 0
 					for _, value := range resultRow {

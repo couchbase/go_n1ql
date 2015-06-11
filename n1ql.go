@@ -310,16 +310,9 @@ func decodeSignature(signature *json.RawMessage) []string {
 
 func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (driver.Rows, error) {
 
-	var latency time.Duration
-	startTime := time.Now()
-
 	resp, err := conn.doClientRequest(query, requestValues)
 	if err != nil {
 		return nil, err
-	}
-
-	if os.Getenv("n1ql_measure_latency") != "" {
-		latency = time.Since(startTime)
 	}
 
 	if resp.StatusCode != 200 {
@@ -356,7 +349,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 		}
 	}
 
-	return resultToRows(bytes.NewReader(*resultRows), resp, signature, latency.Seconds()*1000)
+	return resultToRows(bytes.NewReader(*resultRows), resp, signature)
 
 }
 
