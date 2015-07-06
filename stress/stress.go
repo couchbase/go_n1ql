@@ -75,10 +75,12 @@ func runQuery(server string, queryLines []string, repeat int) {
 	ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
 	os.Setenv("n1ql_creds", string(ac))
 
+	/*
 	_, err = n1ql.Exec("Create primary index on `beer-sample`")
 	if err != nil {
 		//log.Fatal(err)
 	}
+	*/
 
 	for i, query := range queryLines {
 
