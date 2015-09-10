@@ -32,7 +32,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var contacts string
 		if err := rows.Scan(&contacts); err != nil {
@@ -45,16 +44,20 @@ func main() {
 		log.Fatal(err)
 	}
 
+	rows.Close()
 	// prepared statements with positional args
 
 	stmt, err := n1ql.Prepare("select personal_details, shipped_order_history from users_with_orders where doc_type=? and personal_details.age = ?")
+
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	rows, err = stmt.Query("user_profile", 60)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	defer rows.Close()
 	for rows.Next() {
 		var personal, shipped string
 		if err := rows.Scan(&personal, &shipped); err != nil {
@@ -66,6 +69,8 @@ func main() {
 	if err := rows.Err(); err != nil {
 		log.Fatal(err)
 	}
+
+	rows.Close()
 
 	// Exec examples
 	result, err := n1ql.Exec("Upsert INTO contacts values (\"irish\",{\"name\":\"irish\", \"type\":\"contact\"})")
