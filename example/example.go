@@ -45,6 +45,27 @@ func main() {
 	}
 
 	rows.Close()
+
+	// explain statement
+	rows, err = n1ql.Query("explain select * from contacts")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	for rows.Next() {
+		var contacts string
+		if err := rows.Scan(&contacts); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Row returned %s : \n", contacts)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	rows.Close()
+
 	// prepared statements with positional args
 
 	stmt, err := n1ql.Prepare("select personal_details, shipped_order_history from users_with_orders where doc_type=? and personal_details.age = ?")

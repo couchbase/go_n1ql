@@ -296,13 +296,20 @@ func (conn *n1qlConn) Close() error {
 
 func decodeSignature(signature *json.RawMessage) []string {
 
-	var sign map[string]interface{}
+	var sign interface{}
 	rows := make([]string, 0)
 
 	json.Unmarshal(*signature, &sign)
 
-	for row, _ := range sign {
-		rows = append(rows, row)
+	switch s := sign.(type) {
+	case map[string]interface{}:
+		for row, _ := range s {
+			rows = append(rows, row)
+		}
+	case string:
+		rows = append(rows, s)
+	default:
+		fmt.Printf(" Type of this signature is %T", s)
 	}
 
 	return rows
