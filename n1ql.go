@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/couchbaselabs/go-couchbase"
+	"github.com/couchbase/go-couchbase"
 )
 
 // Common error codes
