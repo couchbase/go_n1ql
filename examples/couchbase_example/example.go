@@ -10,7 +10,7 @@ import (
 	"os"
 )
 
-var serverURL = flag.String("server", "http://localhost:9000",
+var serverURL = flag.String("server", "localhost:8093",
 	"couchbase server URL")
 
 func main() {
@@ -28,11 +28,12 @@ func main() {
 
 	// Set query parameters
 	os.Setenv("n1ql_timeout", "10s")
-	ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
+	ac := []byte(`[{"user": "admin:Administrator", "pass": "aaasdasd"}]`)
 	os.Setenv("n1ql_creds", string(ac))
 
 	result, err := n1ql.Exec("Create primary index on `beer-sample`")
 	if err != nil {
+		log.Printf(" heeerre")
 		log.Fatal(err)
 	}
 
