@@ -236,6 +236,34 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 	return nil, fmt.Errorf("N1QL: Query nodes not responding")
 }
 
+func serializeErrors(errors interface{}) string {
+
+	var errString string
+	switch errors := errors.(type) {
+	case []interface{}:
+		for _, e := range errors {
+			switch e := e.(type) {
+			case map[string]interface{}:
+				code, _ := e["code"]
+				msg, _ := e["msg"]
+
+				if code != 0 && msg != "" {
+					if errString != "" {
+						errString = fmt.Sprintf("%v Code %v Msg %v", errString, code, msg)
+					} else {
+						errString = fmt.Sprintf("Code %v Msg %v", code, msg)
+					}
+				}
+			}
+		}
+	}
+
+	if errString != "" {
+		return errString
+	}
+	return fmt.Sprintf(" Error %v %T", errors, errors)
+}
+
 func (conn *n1qlConn) Prepare(query string) (driver.Stmt, error) {
 	var argCount int
 
@@ -264,12 +292,22 @@ func (conn *n1qlConn) Prepare(query string) (driver.Stmt, error) {
 
 	stmt := &n1qlStmt{conn: conn, argCount: argCount}
 
+	errors, ok := resultMap["errors"]
+	if ok && errors != nil {
+		var errs []interface{}
+		_ = json.Unmarshal(*errors, &errs)
+		return nil, fmt.Errorf("N1QL: Error preparing statement %v", serializeErrors(errs))
+	}
+
 	for name, results := range resultMap {
 		switch name {
 		case "results":
 			var preparedResults []interface{}
 			if err := json.Unmarshal(*results, &preparedResults); err != nil {
 				return nil, fmt.Errorf("N1QL: Failed to unmarshal results %v", err)
+			}
+			if len(preparedResults) == 0 {
+				return nil, fmt.Errorf("N1QL: Unknown error, no prepared results returned")
 			}
 			serialized, _ := json.Marshal(preparedResults[0])
 			stmt.name = preparedResults[0].(map[string]interface{})["name"].(string)
@@ -337,22 +375,19 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 
 	var signature []string
 	var resultRows *json.RawMessage
-	var haveEnough = 0
 
 	for name, results := range resultMap {
 		switch name {
+		case "errors":
+			var errs []interface{}
+			_ = json.Unmarshal(*results, &errs)
+			return nil, fmt.Errorf("N1QL: Error executing query %v", serializeErrors(errs))
 		case "signature":
 			if results != nil {
 				signature = decodeSignature(results)
 			}
-			haveEnough++
-
 		case "results":
 			resultRows = results
-			haveEnough++
-		}
-		if haveEnough == 2 {
-			break
 		}
 	}
 
@@ -398,6 +433,7 @@ func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (driv
 		return nil, fmt.Errorf("N1QL: Failed to parse response. Error %v", err)
 	}
 
+	var execErr error
 	res := &n1qlResult{}
 	for name, results := range resultMap {
 		switch name {
@@ -411,11 +447,14 @@ func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (driv
 				res.affectedRows = int64(mc.(float64))
 			}
 			break
+		case "errors":
+			var errs []interface{}
+			_ = json.Unmarshal(*results, &errs)
+			execErr = fmt.Errorf("N1QL: Error executing query %v", serializeErrors(errs))
 		}
 	}
 
-	return res, nil
-
+	return res, execErr
 }
 
 // Execer implementation. To be used for queries that do not return any rows
