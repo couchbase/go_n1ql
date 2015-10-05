@@ -5,9 +5,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	_ "github.com/couchbaselabs/go_n1ql"
+	go_n1ql "github.com/couchbaselabs/go_n1ql"
 	"log"
-	"os"
 )
 
 var serverURL = flag.String("server", "http://localhost:9000",
@@ -27,14 +26,19 @@ func main() {
 	}
 
 	// Set query parameters
-	os.Setenv("n1ql_timeout", "10s")
-	ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
-	os.Setenv("n1ql_creds", string(ac))
+	//os.Setenv("n1ql_timeout", "10s")
+	ac := []byte(`[{"user": "admin:Administrator", "pass": "password"}]`)
+	//os.Setenv("n1ql_creds", string(ac))
 
-	result, err := n1ql.Exec("Create primary index on `beer-sample`")
-	if err != nil {
-		log.Fatal(err)
-	}
+	go_n1ql.SetQueryParams("creds", string(ac))
+	go_n1ql.SetQueryParams("timeout", "10s")
+
+	/*
+		result, err := n1ql.Exec("Create primary index on `beer-sample`")
+		if err != nil {
+			log.Fatal(err)
+		}
+	*/
 
 	name := "brewery"
 	rows, err := n1ql.Query("select * from `beer-sample` where type = ?", name)
@@ -71,7 +75,7 @@ func main() {
 		value["name"] = key
 		value["type"] = "contact"
 		valueBytes, _ := json.Marshal(value)
-		result, err = stmt.Exec(key, valueBytes)
+		result, err := stmt.Exec(key, valueBytes)
 
 		if err != nil {
 			fmt.Errorf(" Failed here %v", err)
@@ -88,12 +92,12 @@ func main() {
 	log.Printf("Total Rows Affected %d", rowsAffected)
 
 	stmt.Close()
-	result, err = stmt.Exec("test", "this shouldn't work")
+	_, err = stmt.Exec("test", "this shouldn't work")
 	if err == nil {
 		log.Fatal("Statement not closed")
 	}
 
-	result, err = n1ql.Exec("delete from default  use keys ? ", "irish")
+	_, err = n1ql.Exec("delete from default  use keys ? ", "irish")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -104,7 +108,7 @@ func main() {
 	}
 
 	value, _ = json.Marshal(keys)
-	result, err = n1ql.Exec("delete from default use keys ?", value)
+	_, err = n1ql.Exec("delete from default use keys ?", value)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -54,24 +54,15 @@ The driver will discover the N1QL endpoints in the cluster and connect to one of
 
 ## Query Options 
 
-Various Query options are supported by `go_n1ql`, these need to be set by calling `os.Setenv` in 
-your application
+Various Query options can be set by calling SetQueryParams. See example below
 
 ```go
-os.Setenv("n1ql_timeout", "10s")
+import  go_n1ql "github.com/couchbaselabs/go_n1ql"
+
 ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
-os.Setenv("n1ql_creds", string(ac))
+go_n1ql.SetQueryParams("creds", ac)
+go_n1ql.SetQueryParams("timeout", "10s")
 ```
-|Query Option|Definition|
-|---|---|
-|  `n1ql_timeout` |Set the timeout for a query i.e. `1000ms`, `10s`, `1m`, etc
-|  `n1ql_encoding`| Desired character encodings for query results. Currently only UTF-8 is supported
-|  `n1ql_compression` |Compression format to use for response data on the wire. Possible values are `ZIP`, `RLE`, `LZMA`, `LZO`, `NONE`. Values are case-insensitive. Default value is `NONE`
-|  `n1ql_scan_consistency` |Specify the consistency guarantee/constraint for index scanning.  Possible values are `not_bounded`, `request_plus`, `statement_plus` and `at_plus`. Default: `not_bounded`
-|  `n1ql_scan_vector` |(Required if scan_consistency=at_plus) Specify the lower bound vector timestamp when using `at_plus` scan consistency.
-|  `n1ql_scan_wait` |Can be supplied with `scan_consistency` values of `request_plus`, `statement_plus` and `at_plus`. Specifies the maximum time the client is willing to wait for an index to catch up to the vector timestamp in the request
-|  `n1ql_creds` |A list of credentials, in the form of user/password objects
-|  `n1ql_client_context_id` |A piece of data supplied by the client that, if present, is echoed in the response
 
 ## Running Select Queries 
 

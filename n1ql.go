@@ -20,7 +20,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -46,11 +45,25 @@ var (
 	N1QL_DEFAULT_STATEMENT = "SELECT 1"
 )
 
+// Rest API query parameters
+var QueryParams map[string]string
+
+func SetQueryParams(key string, value string) error {
+
+	if key == "" {
+		return fmt.Errorf("N1QL: Key not specified")
+	}
+
+	QueryParams[key] = value
+	return nil
+}
+
 // implements Driver interface
 type n1qlDrv struct{}
 
 func init() {
 	sql.Register("n1ql", &n1qlDrv{})
+	QueryParams = make(map[string]string)
 }
 
 func (n *n1qlDrv) Open(name string) (driver.Conn, error) {
@@ -538,38 +551,9 @@ func prepareRequest(query string, queryAPI string, args []driver.Value) (*http.R
 
 func setQueryParams(v *url.Values) {
 
-	if timeout := os.Getenv("n1ql_timeout"); timeout != "" {
-		v.Set("timeout", timeout)
+	for key, value := range QueryParams {
+		v.Set(key, value)
 	}
-
-	if encoding := os.Getenv("n1ql_encoding"); encoding != "" {
-		v.Set("encoding", encoding)
-	}
-
-	if compression := os.Getenv("n1ql_compression"); compression != "" {
-		v.Set("compression", compression)
-	}
-
-	if scan_consistency := os.Getenv("n1ql_scan_consistency"); scan_consistency != "" {
-		v.Set("scan_consistency", scan_consistency)
-	}
-
-	if scan_vector := os.Getenv("n1ql_scan_vector"); scan_vector != "" {
-		v.Set("scan_vector", scan_vector)
-	}
-
-	if scan_wait := os.Getenv("n1ql_scan_wait"); scan_wait != "" {
-		v.Set("scan_wait", scan_wait)
-	}
-
-	if creds := os.Getenv("n1ql_creds"); creds != "" {
-		v.Set("creds", creds)
-	}
-
-	if client_context_id := os.Getenv("n1ql_client_context_id"); client_context_id != "" {
-		v.Set("client_context_id", client_context_id)
-	}
-
 }
 
 type n1qlStmt struct {
