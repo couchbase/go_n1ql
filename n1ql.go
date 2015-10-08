@@ -45,6 +45,12 @@ var (
 	N1QL_DEFAULT_STATEMENT = "SELECT 1"
 )
 
+// flags
+
+var (
+	N1QL_RETURN_METRICS = false
+)
+
 // Rest API query parameters
 var QueryParams map[string]string
 
@@ -56,6 +62,10 @@ func SetQueryParams(key string, value string) error {
 
 	QueryParams[key] = value
 	return nil
+}
+
+func ReturnMetrics(val bool) {
+	N1QL_RETURN_METRICS = val
 }
 
 // implements Driver interface
@@ -388,6 +398,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 
 	var signature []string
 	var resultRows *json.RawMessage
+	var metrics interface{}
 
 	for name, results := range resultMap {
 		switch name {
@@ -401,10 +412,14 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 			}
 		case "results":
 			resultRows = results
+		case "metrics":
+			if N1QL_RETURN_METRICS == true {
+				_ = json.Unmarshal(*results, &metrics)
+			}
 		}
 	}
 
-	return resultToRows(bytes.NewReader(*resultRows), resp, signature)
+	return resultToRows(bytes.NewReader(*resultRows), resp, signature, metrics)
 
 }
 
