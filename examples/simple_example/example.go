@@ -27,7 +27,7 @@ func main() {
 	os.Setenv("n1ql_creds", string(ac))
 
 	// if the following option is set, go_n1ql will return metrics as the last row
-	go_n1ql.ReturnMetrics(true)
+	go_n1ql.SetPassthroughMode(true)
 	name := "dave"
 	rows, err := n1ql.Query("select * from contacts unnest contacts.children where contacts.name = ? and children.age > ?", name, 10)
 
@@ -67,6 +67,8 @@ func main() {
 	}
 
 	rows.Close()
+
+	go_n1ql.SetPassthroughMode(false)
 
 	// prepared statements with positional args
 

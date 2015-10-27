@@ -24,15 +24,15 @@ type n1qlRows struct {
 	errChan    chan error
 	closed     bool
 	rows       []string
-	metrics    interface{}
+	extras     interface{}
 }
 
-func resultToRows(results io.Reader, resp *http.Response, signature []string, metrics interface{}) (*n1qlRows, error) {
+func resultToRows(results io.Reader, resp *http.Response, signature []string, extraVals interface{}) (*n1qlRows, error) {
 
 	rows := &n1qlRows{results: results,
 		resp:       resp,
 		rows:       signature,
-		metrics:    metrics,
+		extras:     extraVals,
 		resultChan: make(chan interface{}, 1),
 		errChan:    make(chan error),
 	}
@@ -60,8 +60,8 @@ func (rows *n1qlRows) populateRows() {
 	}
 
 	// last row will be metrics
-	if rows.metrics != nil {
-		rows.resultChan <- rows.metrics
+	if rows.extras != nil {
+		rows.resultChan <- rows.extras
 	}
 
 	close(rows.resultChan)

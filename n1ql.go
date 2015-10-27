@@ -48,7 +48,7 @@ var (
 // flags
 
 var (
-	N1QL_RETURN_METRICS = false
+	N1QL_PASSTHROUGH_MODE = false
 )
 
 // Rest API query parameters
@@ -64,8 +64,8 @@ func SetQueryParams(key string, value string) error {
 	return nil
 }
 
-func ReturnMetrics(val bool) {
-	N1QL_RETURN_METRICS = val
+func SetPassthroughMode(val bool) {
+	N1QL_PASSTHROUGH_MODE = val
 }
 
 // implements Driver interface
@@ -399,6 +399,8 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 	var signature []string
 	var resultRows *json.RawMessage
 	var metrics interface{}
+	var status interface{}
+	var requestId interface{}
 
 	for name, results := range resultMap {
 		switch name {
@@ -413,13 +415,31 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 		case "results":
 			resultRows = results
 		case "metrics":
-			if N1QL_RETURN_METRICS == true {
+			if N1QL_PASSTHROUGH_MODE == true {
 				_ = json.Unmarshal(*results, &metrics)
+			}
+		case "status":
+			if N1QL_PASSTHROUGH_MODE == true {
+				_ = json.Unmarshal(*results, &status)
+			}
+		case "requestID":
+			if N1QL_PASSTHROUGH_MODE == true {
+				_ = json.Unmarshal(*results, &requestId)
 			}
 		}
 	}
 
-	return resultToRows(bytes.NewReader(*resultRows), resp, signature, metrics)
+	if N1QL_PASSTHROUGH_MODE == true {
+		extraVals := map[string]interface{}{"requestID": requestId,
+			"status":    status,
+			"signature": signature,
+			"metrics":   metrics}
+
+		// when in passthrough mode, do not pass the decoded value of the signature
+		return resultToRows(bytes.NewReader(*resultRows), resp, []string{"*"}, extraVals)
+	}
+
+	return resultToRows(bytes.NewReader(*resultRows), resp, signature, nil)
 
 }
 
