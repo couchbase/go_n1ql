@@ -433,13 +433,13 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 		extraVals := map[string]interface{}{"requestID": requestId,
 			"status":    status,
 			"signature": signature,
-			"metrics":   metrics}
+		}
 
 		// when in passthrough mode, do not pass the decoded value of the signature
-		return resultToRows(bytes.NewReader(*resultRows), resp, []string{"*"}, extraVals)
+		return resultToRows(bytes.NewReader(*resultRows), resp, []string{"*"}, metrics, extraVals)
 	}
 
-	return resultToRows(bytes.NewReader(*resultRows), resp, signature, nil)
+	return resultToRows(bytes.NewReader(*resultRows), resp, signature, nil, nil)
 
 }
 

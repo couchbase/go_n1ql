@@ -25,14 +25,16 @@ type n1qlRows struct {
 	closed     bool
 	rows       []string
 	extras     interface{}
+	metrics    interface{}
 }
 
-func resultToRows(results io.Reader, resp *http.Response, signature []string, extraVals interface{}) (*n1qlRows, error) {
+func resultToRows(results io.Reader, resp *http.Response, signature []string, metrics, extraVals interface{}) (*n1qlRows, error) {
 
 	rows := &n1qlRows{results: results,
 		resp:       resp,
 		rows:       signature,
 		extras:     extraVals,
+		metrics:    metrics,
 		resultChan: make(chan interface{}, 1),
 		errChan:    make(chan error),
 	}
@@ -52,6 +54,10 @@ func (rows *n1qlRows) populateRows() {
 		rows.errChan <- err
 	}
 
+	if rows.extras != nil {
+		rows.resultChan <- rows.extras
+	}
+
 	for _, row := range resultRows {
 		if rows.closed == true {
 			break
@@ -60,8 +66,8 @@ func (rows *n1qlRows) populateRows() {
 	}
 
 	// last row will be metrics
-	if rows.extras != nil {
-		rows.resultChan <- rows.extras
+	if rows.metrics != nil {
+		rows.resultChan <- rows.metrics
 	}
 
 	close(rows.resultChan)
