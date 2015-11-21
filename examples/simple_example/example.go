@@ -26,10 +26,29 @@ func main() {
 	ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
 	os.Setenv("n1ql_creds", string(ac))
 
+	rows, err := n1ql.Query("select element (select * from contacts)")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	for rows.Next() {
+		var contacts string
+		if err := rows.Scan(&contacts); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Row returned %s : \n", contacts)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	rows.Close()
+
 	// if the following option is set, go_n1ql will return metrics as the last row
 	go_n1ql.SetPassthroughMode(true)
 	name := "dave"
-	rows, err := n1ql.Query("select * from contacts unnest contacts.children where contacts.name = ? and children.age > ?", name, 10)
+	rows, err = n1ql.Query("select * from contacts unnest contacts.children where contacts.name = ? and children.age > ?", name, 10)
 
 	if err != nil {
 		log.Fatal(err)

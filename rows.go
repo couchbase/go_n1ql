@@ -104,6 +104,14 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 						dest[i] = bytes
 						i++
 					}
+				case []interface{}:
+					i := 0
+					for _, value := range resultRow {
+						bytes, _ := json.Marshal(value)
+						dest[i] = bytes
+						i++
+					}
+
 				}
 			}
 			return nil
