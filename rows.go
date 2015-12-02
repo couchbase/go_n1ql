@@ -58,16 +58,16 @@ func (rows *n1qlRows) populateRows() {
 		rows.resultChan <- rows.extras
 	}
 
+	// second row will be metrics
+	if rows.metrics != nil {
+		rows.resultChan <- rows.metrics
+	}
+
 	for _, row := range resultRows {
 		if rows.closed == true {
 			break
 		}
 		rows.resultChan <- row
-	}
-
-	// last row will be metrics
-	if rows.metrics != nil {
-		rows.resultChan <- rows.metrics
 	}
 
 	close(rows.resultChan)
