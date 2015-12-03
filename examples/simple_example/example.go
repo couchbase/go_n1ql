@@ -31,6 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	for rows.Next() {
 		var contacts string
 		if err := rows.Scan(&contacts); err != nil {
@@ -49,6 +50,25 @@ func main() {
 	go_n1ql.SetPassthroughMode(true)
 	name := "dave"
 	rows, err = n1ql.Query("select * from contacts unnest contacts.children where contacts.name = ? and children.age > ?", name, 10)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	for rows.Next() {
+		var contacts string
+		if err := rows.Scan(&contacts); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Row returned %s : \n", contacts)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	rows.Close()
+
+	rows, err = n1ql.Query("select name from contacts")
 
 	if err != nil {
 		log.Fatal(err)

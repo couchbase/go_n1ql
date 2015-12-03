@@ -23,16 +23,16 @@ type n1qlRows struct {
 	resultChan chan interface{}
 	errChan    chan error
 	closed     bool
-	rows       []string
+	signature  interface{}
 	extras     interface{}
 	metrics    interface{}
 }
 
-func resultToRows(results io.Reader, resp *http.Response, signature []string, metrics, extraVals interface{}) (*n1qlRows, error) {
+func resultToRows(results io.Reader, resp *http.Response, signature interface{}, metrics, extraVals interface{}) (*n1qlRows, error) {
 
 	rows := &n1qlRows{results: results,
 		resp:       resp,
-		rows:       signature,
+		signature:  signature,
 		extras:     extraVals,
 		metrics:    metrics,
 		resultChan: make(chan interface{}, 1),
@@ -75,7 +75,18 @@ func (rows *n1qlRows) populateRows() {
 }
 
 func (rows *n1qlRows) Columns() []string {
-	return rows.rows
+
+	var columns = make([]string, 0)
+
+	switch s := rows.signature.(type) {
+	case map[string]interface{}:
+		for key, _ := range s {
+			columns = append(columns, key)
+		}
+	case string:
+		columns = append(columns, s)
+	}
+	return columns
 }
 
 func (rows *n1qlRows) Close() error {

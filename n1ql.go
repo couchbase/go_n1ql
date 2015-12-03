@@ -355,22 +355,21 @@ func (conn *n1qlConn) Close() error {
 	return nil
 }
 
-func decodeSignature(signature *json.RawMessage) []string {
+func decodeSignature(signature *json.RawMessage) interface{} {
 
 	var sign interface{}
-	rows := make([]string, 0)
+	var rows map[string]interface{}
 
 	json.Unmarshal(*signature, &sign)
 
 	switch s := sign.(type) {
 	case map[string]interface{}:
-		for row, _ := range s {
-			rows = append(rows, row)
-		}
+		return s
 	case string:
-		rows = append(rows, s)
+		return s
 	default:
-		fmt.Printf(" Type of this signature is %T", s)
+		fmt.Printf(" Cannot decode signature. Type of this signature is %T", s)
+		return map[string]interface{}{"*": "*"}
 	}
 
 	return rows
@@ -396,7 +395,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 		return nil, fmt.Errorf(" N1QL: Failed to decode result %v", err)
 	}
 
-	var signature []string
+	var signature interface{}
 	var resultRows *json.RawMessage
 	var metrics interface{}
 	var status interface{}
@@ -435,8 +434,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 			"signature": signature,
 		}
 
-		// when in passthrough mode, do not pass the decoded value of the signature
-		return resultToRows(bytes.NewReader(*resultRows), resp, []string{"*"}, metrics, extraVals)
+		return resultToRows(bytes.NewReader(*resultRows), resp, signature, metrics, extraVals)
 	}
 
 	return resultToRows(bytes.NewReader(*resultRows), resp, signature, nil, nil)
