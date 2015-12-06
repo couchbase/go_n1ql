@@ -18,14 +18,16 @@ import (
 )
 
 type n1qlRows struct {
-	resp       *http.Response
-	results    io.Reader
-	resultChan chan interface{}
-	errChan    chan error
-	closed     bool
-	signature  interface{}
-	extras     interface{}
-	metrics    interface{}
+	resp        *http.Response
+	results     io.Reader
+	resultChan  chan interface{}
+	errChan     chan error
+	closed      bool
+	signature   interface{}
+	extras      interface{}
+	metrics     interface{}
+	passthrough bool
+	rowsSent    int
 }
 
 func resultToRows(results io.Reader, resp *http.Response, signature interface{}, metrics, extraVals interface{}) (*n1qlRows, error) {
@@ -38,6 +40,12 @@ func resultToRows(results io.Reader, resp *http.Response, signature interface{},
 		resultChan: make(chan interface{}, 1),
 		errChan:    make(chan error),
 	}
+
+	// detect if we are in passthrough mode
+	if metrics != nil && extraVals != nil {
+		rows.passthrough = true
+	}
+
 	go rows.populateRows()
 
 	return rows, nil
@@ -103,6 +111,16 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 			if numColumns == 1 {
 				bytes, _ := json.Marshal(r)
 				dest[0] = bytes
+			} else if rows.passthrough == true && rows.rowsSent < 2 {
+				// first two rows in passthrough mode are status and metrics
+				// in passthrough mode if the query being executed has multiple projections
+				// then it is highly likely that the number of columns of the metrics/status
+				// will not match the number of columns, therefore the following hack
+				bytes, _ := json.Marshal(r)
+				dest[0] = bytes
+				for i := 1; i < numColumns; i++ {
+					dest[i] = ""
+				}
 			} else {
 				switch resultRow := r.(type) {
 				case map[string]interface{}:
@@ -125,6 +143,7 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 
 				}
 			}
+			rows.rowsSent++
 			return nil
 		} else {
 			return io.EOF
