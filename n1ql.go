@@ -410,6 +410,11 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 		case "signature":
 			if results != nil {
 				signature = decodeSignature(results)
+			} else if N1QL_PASSTHROUGH_MODE == true {
+				// for certain types of DML queries, the returned signature could be null
+				// however in passthrough mode we always return the metrics, status etc as
+				// rows therefore we need to ensure that there is a default signature.
+				signature = map[string]interface{}{"*": "*"}
 			}
 		case "results":
 			resultRows = results

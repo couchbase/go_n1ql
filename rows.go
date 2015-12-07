@@ -94,6 +94,7 @@ func (rows *n1qlRows) Columns() []string {
 	case string:
 		columns = append(columns, s)
 	}
+
 	return columns
 }
 
