@@ -123,12 +123,12 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 
 	resp, err := HTTPClient.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("N1QL: Failed to execute query Error  %v", err)
+		return nil, fmt.Errorf("%v", err)
 	}
 
 	if resp.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("N1QL: Failed to execute query %s", bod)
+		return nil, fmt.Errorf("%s", bod)
 	}
 
 	var nodesInfo []interface{}
@@ -300,7 +300,7 @@ func (conn *n1qlConn) Prepare(query string) (driver.Stmt, error) {
 
 	if resp.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("N1QL: Failed to execute query %s", bod)
+		return nil, fmt.Errorf("%s", bod)
 	}
 
 	var resultMap map[string]*json.RawMessage
@@ -384,7 +384,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 
 	if resp.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("N1QL: Failed to execute query %s", bod)
+		return nil, fmt.Errorf("%s", bod)
 	}
 
 	var resultMap map[string]*json.RawMessage
@@ -471,7 +471,7 @@ func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (driv
 
 	if resp.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("N1QL: Failed to execute query %s", bod)
+		return nil, fmt.Errorf("%s", bod)
 	}
 
 	var resultMap map[string]*json.RawMessage
