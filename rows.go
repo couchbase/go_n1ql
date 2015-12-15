@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 )
 
 type n1qlRows struct {
@@ -27,6 +28,7 @@ type n1qlRows struct {
 	extras      interface{}
 	metrics     interface{}
 	passthrough bool
+	columns     []string
 	rowsSent    int
 }
 
@@ -95,6 +97,8 @@ func (rows *n1qlRows) Columns() []string {
 		columns = append(columns, s)
 	}
 
+	sort.Strings(columns)
+	rows.columns = columns
 	return columns
 }
 
@@ -125,13 +129,18 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 			} else {
 				switch resultRow := r.(type) {
 				case map[string]interface{}:
-					if len(resultRow) != numColumns {
-						return fmt.Errorf("N1QL: Columns do not match %d != %d r %v", len(resultRow), numColumns, r)
+					if len(resultRow) > numColumns {
+						return fmt.Errorf("N1QL: More Colums than expected %d != %d r %v", len(resultRow), numColumns, r)
 					}
 					i := 0
-					for _, value := range resultRow {
-						bytes, _ := json.Marshal(value)
-						dest[i] = bytes
+					for _, colName := range rows.columns {
+						if value, exists := resultRow[colName]; exists == true {
+							bytes, _ := json.Marshal(value)
+							dest[i] = bytes
+
+						} else {
+							dest[i] = ""
+						}
 						i++
 					}
 				case []interface{}:
