@@ -64,6 +64,16 @@ func SetQueryParams(key string, value string) error {
 	return nil
 }
 
+func UnsetQueryParams(key string) error {
+
+	if key == "" {
+		return fmt.Errorf("N1QL: Key not specified")
+	}
+
+	delete(QueryParams, key)
+	return nil
+}
+
 func SetPassthroughMode(val bool) {
 	N1QL_PASSTHROUGH_MODE = val
 }

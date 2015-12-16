@@ -6,7 +6,6 @@ import (
 	"fmt"
 	go_n1ql "github.com/couchbaselabs/go_n1ql"
 	"log"
-	"os"
 )
 
 func main() {
@@ -22,9 +21,10 @@ func main() {
 	}
 
 	// Set query parameters
-	os.Setenv("n1ql_timeout", "10s")
 	ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
-	os.Setenv("n1ql_creds", string(ac))
+	go_n1ql.SetQueryParams("creds", string(ac))
+	go_n1ql.SetQueryParams("timeout", "10s")
+	go_n1ql.SetQueryParams("scan_consistency", "request_plus")
 
 	rows, err := n1ql.Query("select element (select * from contacts)")
 
@@ -222,6 +222,21 @@ func main() {
 	result, err = n1ql.Exec("delete from contacts use keys ?", value)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	go_n1ql.UnsetQueryParams("scan_consistency")
+	result, err = n1ql.Exec("delete from contacts use keys ?", value)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go_n1ql.UnsetQueryParams("scan_consistency")
+
+	// error expected
+	go_n1ql.SetQueryParams("scan_consistency", "rubbish_plus")
+	result, err = n1ql.Exec("delete from contacts use keys ?", value)
+	if err == nil {
+		log.Fatal("Error expected")
 	}
 
 }
