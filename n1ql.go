@@ -117,6 +117,7 @@ func discoverN1QLService(name string, ps couchbase.PoolServices) string {
 				} else {
 					hostname = ns.Hostname
 				}
+
 				return fmt.Sprintf("%s:%d", hostname, port)
 			}
 		}
@@ -130,6 +131,8 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 	request, _ := http.NewRequest("GET", queryAdmin, nil)
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	queryAPIs := make([]string, 0)
+
+	hostname := strings.Split(n1qlEndPoint, ":")[0]
 
 	resp, err := HTTPClient.Do(request)
 	if err != nil {
@@ -156,6 +159,11 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 		case map[string]interface{}:
 			queryAPIs = append(queryAPIs, queryNode["queryEndpoint"].(string))
 		}
+	}
+
+	// if the end-points contain 127.0.0.1 then replace them with the actual hostname
+	for i, qa := range queryAPIs {
+		queryAPIs[i] = strings.Replace(qa, "127.0.0.1", hostname, -1)
 	}
 
 	if len(queryAPIs) == 0 {
