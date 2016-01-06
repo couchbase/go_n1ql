@@ -176,13 +176,19 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 func OpenN1QLConnection(name string) (driver.Conn, error) {
 
 	var queryAPIs []string
-	if strings.HasPrefix(name, "http://") {
-		// cluster endpoint
-		client, err := couchbase.Connect(name)
-		if err != nil {
-			return nil, fmt.Errorf("N1QL: Unable to connect to cluster endpoint. Error %v", err)
-		}
 
+	//First check if the input string is a cluster endpoint
+	client, err := couchbase.Connect(name)
+	var perr error = nil
+	if err != nil {
+		perr = fmt.Errorf("N1QL: Unable to connect to cluster endpoint. Error %v", err)
+		// If not cluster endpoint then check if query endpoint
+		name = strings.TrimSuffix(name, "/")
+		queryAPI := name + N1QL_SERVICE_ENDPOINT
+		queryAPIs = make([]string, 1, 1)
+		queryAPIs[0] = queryAPI
+
+	} else {
 		ps, err := client.GetPoolServices("default")
 		if err != nil {
 			return nil, fmt.Errorf("N1QL: Failed to get NodeServices list. Error %v", err)
@@ -198,11 +204,6 @@ func OpenN1QLConnection(name string) (driver.Conn, error) {
 			return nil, err
 		}
 
-	} else {
-		name = strings.TrimSuffix(name, "/")
-		queryAPI := "http://" + name + N1QL_SERVICE_ENDPOINT
-		queryAPIs = make([]string, 1, 1)
-		queryAPIs[0] = queryAPI
 	}
 
 	conn := &n1qlConn{client: HTTPClient, queryAPIs: queryAPIs}
@@ -214,7 +215,13 @@ func OpenN1QLConnection(name string) (driver.Conn, error) {
 
 	resp, err := conn.client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("N1QL: Connection failed %v", err)
+		var final_error string
+		if perr != nil {
+			final_error = fmt.Errorf("N1QL: Connection failed %v", err).Error() + "\n" + perr.Error()
+		} else {
+			final_error = fmt.Errorf("N1QL: Connection failed %v", err).Error()
+		}
+		return nil, fmt.Errorf("%v", final_error)
 	}
 	defer resp.Body.Close()
 

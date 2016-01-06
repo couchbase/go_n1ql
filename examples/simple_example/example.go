@@ -10,7 +10,7 @@ import (
 
 func main() {
 
-	n1ql, err := sql.Open("n1ql", "localhost:8093")
+	n1ql, err := sql.Open("n1ql", "http://localhost:8093")
 	if err != nil {
 		log.Fatal(err)
 	}

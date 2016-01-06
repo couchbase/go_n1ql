@@ -7,7 +7,7 @@ import (
 	"log"
 )
 
-var serverURL = flag.String("server", "localhost:8093",
+var serverURL = flag.String("server", "http://localhost:8093",
 	"couchbase server URL")
 
 func main() {
