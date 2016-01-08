@@ -3,7 +3,7 @@ package main
 import (
 	"database/sql"
 	"flag"
-	_ "github.com/couchbaselabs/go_n1ql"
+	_ "github.com/couchbase/go_n1ql"
 	"log"
 	"os"
 )

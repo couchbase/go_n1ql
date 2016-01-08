@@ -9,14 +9,14 @@ This library implements the standard go database APIs for
 ## Installation
 
 ```bash
-go get github.com/couchbaselabs/go_n1ql
-cd $GOPATH/src/github.com/couchbaselabs/go_n1ql
+go get github.com/couchbase/go_n1ql
+cd $GOPATH/src/github.com/couchbase/go_n1ql
 go get ...
 ```
 
 ## Example Application 
 
-See [./example/example.go](https://github.com/couchbaselabs/go_n1ql/blob/master/example/example.go)
+See [./example/example.go](https://github.com/couchbase/go_n1ql/blob/master/example/example.go)
 
 Start
 ```bash
@@ -31,7 +31,7 @@ To use the `go_n1ql` driver the following two imports are required
 ```go
 import (
     "database/sql"
-    _ "github.com/couchbaselabs/go_n1ql"
+    _ "github.com/couchbase/go_n1ql"
 )
 ```
 
@@ -57,7 +57,7 @@ The driver will discover the N1QL endpoints in the cluster and connect to one of
 Various Query options can be set by calling SetQueryParams. See example below
 
 ```go
-import  go_n1ql "github.com/couchbaselabs/go_n1ql"
+import  go_n1ql "github.com/couchbase/go_n1ql"
 
 ac := []byte(`[{"user": "admin:Administrator", "pass": "asdasd"}]`)
 go_n1ql.SetQueryParams("creds", ac)

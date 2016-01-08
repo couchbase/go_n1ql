@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"github.com/couchbase/go-couchbase"
-	_ "github.com/couchbaselabs/go_n1ql"
+	_ "github.com/couchbase/go_n1ql"
 	"log"
 	"os"
 )
