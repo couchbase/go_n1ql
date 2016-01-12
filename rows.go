@@ -95,6 +95,8 @@ func (rows *n1qlRows) Columns() []string {
 		}
 	case string:
 		columns = append(columns, s)
+	case nil:
+		columns = append(columns, "null")
 	}
 
 	sort.Strings(columns)
