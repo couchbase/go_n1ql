@@ -468,9 +468,14 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 			"signature": signature,
 		}
 
-		return resultToRows(bytes.NewReader(*resultRows), resp, signature, metrics, errs, extraVals)
+		// in passthrough mode last line will always be en error line
+		errors := map[string]interface{}{"errors": errs}
+		return resultToRows(bytes.NewReader(*resultRows), resp, signature, metrics, errors, extraVals)
 	}
 
+	// we return the errors with the rows because we can have scenarios where there are valid
+	// results returned along with the error and this interface doesn't allow for both to be
+	// returned and hence this workaround.
 	return resultToRows(bytes.NewReader(*resultRows), resp, signature, nil, errs, nil)
 
 }
