@@ -27,18 +27,20 @@ type n1qlRows struct {
 	signature   interface{}
 	extras      interface{}
 	metrics     interface{}
+	errors      interface{}
 	passthrough bool
 	columns     []string
 	rowsSent    int
 }
 
-func resultToRows(results io.Reader, resp *http.Response, signature interface{}, metrics, extraVals interface{}) (*n1qlRows, error) {
+func resultToRows(results io.Reader, resp *http.Response, signature interface{}, metrics, errors, extraVals interface{}) (*n1qlRows, error) {
 
 	rows := &n1qlRows{results: results,
 		resp:       resp,
 		signature:  signature,
 		extras:     extraVals,
 		metrics:    metrics,
+		errors:     errors,
 		resultChan: make(chan interface{}, 1),
 		errChan:    make(chan error),
 	}
@@ -78,6 +80,10 @@ func (rows *n1qlRows) populateRows() {
 			break
 		}
 		rows.resultChan <- row
+	}
+
+	if rows.errors != nil {
+		rows.resultChan <- rows.errors
 	}
 
 	close(rows.resultChan)

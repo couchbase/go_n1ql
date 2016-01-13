@@ -297,9 +297,9 @@ func serializeErrors(errors interface{}) string {
 
 				if code != 0 && msg != "" {
 					if errString != "" {
-						errString = fmt.Sprintf("%v Code %v Msg %v", errString, code, msg)
+						errString = fmt.Sprintf("%v Code : %v Message : %v", errString, code, msg)
 					} else {
-						errString = fmt.Sprintf("Code %v Msg %v", code, msg)
+						errString = fmt.Sprintf("Code : %v Message : %v", code, msg)
 					}
 				}
 			}
@@ -425,13 +425,12 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 	var metrics interface{}
 	var status interface{}
 	var requestId interface{}
+	var errs []interface{}
 
 	for name, results := range resultMap {
 		switch name {
 		case "errors":
-			var errs []interface{}
 			_ = json.Unmarshal(*results, &errs)
-			return nil, fmt.Errorf("N1QL: Error executing query %v", serializeErrors(errs))
 		case "signature":
 			if results != nil {
 				signature = decodeSignature(results)
@@ -464,10 +463,10 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 			"signature": signature,
 		}
 
-		return resultToRows(bytes.NewReader(*resultRows), resp, signature, metrics, extraVals)
+		return resultToRows(bytes.NewReader(*resultRows), resp, signature, metrics, errs, extraVals)
 	}
 
-	return resultToRows(bytes.NewReader(*resultRows), resp, signature, nil, nil)
+	return resultToRows(bytes.NewReader(*resultRows), resp, signature, nil, errs, nil)
 
 }
 
