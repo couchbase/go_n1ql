@@ -430,7 +430,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 	var metrics interface{}
 	var status interface{}
 	var requestId interface{}
-	var errs []interface{}
+	var errs interface{}
 
 	for name, results := range resultMap {
 		switch name {
