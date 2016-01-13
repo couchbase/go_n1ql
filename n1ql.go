@@ -11,6 +11,7 @@ package go_n1ql
 
 import (
 	"bytes"
+	"crypto/tls"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
@@ -176,6 +177,10 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 func OpenN1QLConnection(name string) (driver.Conn, error) {
 
 	var queryAPIs []string
+
+	if strings.HasPrefix(name, "https") {
+		HTTPTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
 
 	//First check if the input string is a cluster endpoint
 	client, err := couchbase.Connect(name)
