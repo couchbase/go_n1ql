@@ -55,6 +55,10 @@ var (
 // Rest API query parameters
 var QueryParams map[string]string
 
+// Username and password. Used for querying the cluster endpoint,
+// which may require authorization.
+var username, password string
+
 func SetQueryParams(key string, value string) error {
 
 	if key == "" {
@@ -77,6 +81,11 @@ func UnsetQueryParams(key string) error {
 
 func SetPassthroughMode(val bool) {
 	N1QL_PASSTHROUGH_MODE = val
+}
+
+func SetUsernamePassword(u, p string) {
+	username = u
+	password = p
 }
 
 // implements Driver interface
@@ -127,7 +136,6 @@ func discoverN1QLService(name string, ps couchbase.PoolServices) string {
 }
 
 func getQueryApi(n1qlEndPoint string) ([]string, error) {
-
 	queryAdmin := "http://" + n1qlEndPoint + "/admin/clusters/default/nodes"
 	request, _ := http.NewRequest("GET", queryAdmin, nil)
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -174,19 +182,50 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 	return queryAPIs, nil
 }
 
-func OpenN1QLConnection(name string) (driver.Conn, error) {
+// Adds authorization information to the given url.
+// A url like http://localhost:8091/ is converted to
+// http://user:password@localhost:8091/ .
+func addAuthorization(url string) string {
+	if strings.Contains(url, "@") {
+		// Already contains authorization.
+		return url
+	}
+	if username == "" {
+		// Username/password not set.
+		return url
+	}
+	// Assume the URL is in one of 3 forms:
+	//   http://hostname:port...
+	//   https://hostname:port...
+	//   hostname:port...
+	// Where the ... indicates zero or more trailing characters.
+	userInfo := username + ":" + password + "@"
+	var prefix string
+	if strings.HasPrefix(url, "http://") {
+		prefix = "http://"
+	} else if strings.HasPrefix(url, "https://") {
+		prefix = "https://"
+	} else {
+		prefix = ""
+	}
+	suffix := strings.TrimPrefix(url, prefix)
+	return prefix + userInfo + suffix
+}
 
+func OpenN1QLConnection(name string) (driver.Conn, error) {
 	var queryAPIs []string
 
 	if strings.HasPrefix(name, "https") {
 		HTTPTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
+	name = addAuthorization(name)
+
 	//First check if the input string is a cluster endpoint
 	client, err := couchbase.Connect(name)
 	var perr error = nil
 	if err != nil {
-		perr = fmt.Errorf("N1QL: Unable to connect to cluster endpoint. Error %v", err)
+		perr = fmt.Errorf("N1QL: Unable to connect to cluster endpoint %s. Error %v", name, err)
 		// If not cluster endpoint then check if query endpoint
 		name = strings.TrimSuffix(name, "/")
 		queryAPI := name + N1QL_SERVICE_ENDPOINT
