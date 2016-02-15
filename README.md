@@ -14,6 +14,15 @@ cd $GOPATH/src/github.com/couchbase/go_n1ql
 go get ...
 ```
 
+## Test
+
+The test code assumes an instance of Couchbase is running on the local machine,
+and the *beer-sample* sample bucket is loaded. 
+
+From the */go_n1ql* directory, run:
+
+	go test .
+
 ## Example Application 
 
 See [./example/example.go](https://github.com/couchbase/go_n1ql/blob/master/example/example.go)

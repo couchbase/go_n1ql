@@ -15,16 +15,16 @@ import (
 	"testing"
 )
 
-// To run these tests against cbq-engine. Run :
-// ./server/cbq-engine/cbq-engine -datastore=dir:./test/json
+// This test assumes a Couchbase instance is accessible on the local machine,
+// and that the standard bucket "beer-sample" is available on it.
 
 func TestConnection(t *testing.T) {
-	conn, err := OpenN1QLConnection("localhost:8093")
+	conn, err := OpenN1QLConnection("http://localhost:8093")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	results, err := conn.(*n1qlConn).Query("select * from contacts", nil)
+	results, err := conn.(*n1qlConn).Query("select * from `beer-sample` where city = 'San Francisco'", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestConnection(t *testing.T) {
 		t.Fatal("Query returned 0 rows")
 	}
 
-	results, err = conn.(*n1qlConn).Query("select * from contacts where type = \"contact\"", nil)
+	results, err = conn.(*n1qlConn).Query("select * from `beer-sample` where city = \"London\"", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,16 +47,14 @@ func TestConnection(t *testing.T) {
 	totalRows = 0
 	for results.Next(result) != io.EOF {
 		totalRows++
-		if totalRows == 3 {
-			results.Close()
-		}
 	}
+	results.Close()
 
 	if totalRows != 4 {
 		t.Fatal("Expecting 4 rows got %d", totalRows)
 	}
 
-	stmt, err := conn.Prepare("select * from contacts where type = \"contact\" limit 5")
+	stmt, err := conn.Prepare("select * from `beer-sample` where type = \"brewery\" limit 5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +73,7 @@ func TestConnection(t *testing.T) {
 		t.Fatal(" Got %d Rows instead of 5", totalRows)
 	}
 
-	res, err := conn.(*n1qlConn).Exec("upsert into contacts key \"irish2\" values {\"name\":\"irish\", \"type\":\"contact\"}\"", nil)
+	res, err := conn.(*n1qlConn).Exec("upsert into `beer-sample` (key,value) values ('irish2', {'name': 'irish', 'type':'contact'})", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +83,7 @@ func TestConnection(t *testing.T) {
 		t.Fatal("Insert failed.")
 	}
 
-	res, err = conn.(*n1qlConn).Exec("delete from contacts use keys \"irish2\"", nil)
+	res, err = conn.(*n1qlConn).Exec("delete from `beer-sample` use keys \"irish2\"", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
